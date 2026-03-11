@@ -1,0 +1,9 @@
+[package]
+name = "over_leveraging"
+version = "0.1.0"
+edition = "2021"
+
+[dev-dependencies]
+soroban-sdk = { version = "25", features = ["testutils"] }
+soroban-ledger-snapshot-source-tx = { git = "https://github.com/stellar/rs-soroban-sdk", branch = "snapshot-source-tx" }
+blend-contract-sdk = "2.25.0"
