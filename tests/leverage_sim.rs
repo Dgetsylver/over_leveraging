@@ -1,6 +1,9 @@
 use blend_contract_sdk::pool;
 use soroban_ledger_snapshot_source_tx::{Network, TxSnapshotSource};
-use soroban_sdk::{token::TokenClient, Address, Env};
+use soroban_sdk::{
+    token::{StellarAssetClient, TokenClient},
+    Address, Env, Vec,
+};
 
 /// Etherfuse pool on Blend Protocol (Stellar mainnet)
 const POOL_ID: &str = "CDMAVJPFXPADND3YRL4BSM3AKZWCTFMX27GLLXCML3PD62HEQS5FPVAI";
@@ -258,4 +261,157 @@ fn simulate_usdc_leverage() {
 
     println!("  └─────────────────────────────────────────────────────────┘");
     println!();
+}
+
+// ─── Transaction execution test ───────────────────────────────────────────────
+//
+// Validates the leverage math by actually executing supply+borrow transactions
+// on the mainnet fork and comparing on-chain positions to the theoretical table.
+//
+// Each loop iteration submits an atomic batch:
+//   [SupplyCollateral(balance), Borrow(balance × c_factor)]
+//
+// After each loop, the returned Positions are converted from d-tokens / b-tokens
+// back to underlying USDC using the reserve's current d_rate / b_rate.
+//
+#[test]
+fn execute_leverage_loop() {
+    println!();
+    println!("╔══════════════════════════════════════════════════════════╗");
+    println!("║   Blend Protocol · Execute & Verify USDC Leverage Loop  ║");
+    println!("╚══════════════════════════════════════════════════════════╝");
+
+    // ── 1. Fork Stellar mainnet ───────────────────────────────────────────────
+    println!("\n[1/4] Forking mainnet at ledger {}…", MAINNET_LEDGER);
+    let source = TxSnapshotSource::new(Network::mainnet(None), MAINNET_LEDGER, None);
+    let env = Env::from_ledger_snapshot(source);
+    env.mock_all_auths(); // bypass auth for supply/borrow/mint
+
+    // ── 2. Identify USDC reserve ──────────────────────────────────────────────
+    println!("[2/4] Connecting to pool and locating USDC reserve…");
+    let pool_addr = Address::from_str(&env, POOL_ID);
+    let pool = pool::Client::new(&env, &pool_addr);
+    let pool_cfg = pool.get_config();
+    let bstop_rate = pool_cfg.bstop_rate as f64 / SCALAR;
+
+    let reserve_list = pool.get_reserve_list();
+    let mut usdc_addr: Option<Address> = None;
+    for i in 0..reserve_list.len() {
+        let asset = reserve_list.get(i).unwrap();
+        let tok = TokenClient::new(&env, &asset);
+        if tok.symbol() == soroban_sdk::String::from_str(&env, "USDC") {
+            usdc_addr = Some(asset);
+            break;
+        }
+    }
+    let usdc_addr = usdc_addr.expect("USDC not found among pool reserves");
+
+    let reserve = pool.get_reserve(&usdc_addr);
+    let cfg = &reserve.config;
+    let c_factor = cfg.c_factor as f64 / SCALAR;
+    let usdc_decimals = cfg.decimals;
+    let usdc_index = cfg.index;
+    let scalar_f = 10_f64.powi(usdc_decimals as i32);
+
+    let (supply_apr, borrow_apr) = compute_rates(&reserve, bstop_rate);
+
+    println!("  c_factor = {:.1}%  supply APR = {:.2}%  borrow APR = {:.2}%",
+        c_factor * 100.0, supply_apr * 100.0, borrow_apr * 100.0);
+
+    // ── 3. Create test account and fund with 1 000 USDC ──────────────────────
+    println!("[3/4] Minting 1 000 USDC to test account…");
+    let test_user = Address::generate(&env);
+    let initial: i128 = 1_000 * 10_i128.pow(usdc_decimals);
+
+    StellarAssetClient::new(&env, &usdc_addr).mint(&test_user, &initial);
+
+    let usdc_token = TokenClient::new(&env, &usdc_addr);
+    assert_eq!(usdc_token.balance(&test_user), initial, "mint failed");
+
+    let initial_f = initial as f64 / scalar_f;
+
+    // ── 4. Execute leverage loops ─────────────────────────────────────────────
+    //
+    // How many loops to run (13 keeps HF ≥ 1.05 at c=0.95, see doc.md).
+    // The last loop in the table (loop 13) still borrows; loop 14 just
+    // supplies the proceeds without borrowing to illustrate the final state.
+    //
+    const N_LOOPS: usize = 13;
+
+    println!("[4/4] Executing {N_LOOPS} supply+borrow loops on mainnet fork…\n");
+    println!("  {:>4}  {:>14}  {:>14}  {:>9}  {:>9}  {:>8}",
+        "Loop", "Supplied  ($)", "Borrowed  ($)", "Actual", "Theory", "Δ lev");
+    println!("  {}", "─".repeat(67));
+
+    for n in 0..N_LOOPS {
+        let balance = usdc_token.balance(&test_user);
+
+        // Borrow up to c_factor × supply (integer arithmetic, truncates).
+        let borrow_amount = balance * cfg.c_factor as i128 / SCALAR as i128;
+
+        let mut requests = Vec::new(&env);
+        requests.push_back(pool::Request {
+            request_type: 2, // SupplyCollateral
+            address: usdc_addr.clone(),
+            amount: balance,
+        });
+        requests.push_back(pool::Request {
+            request_type: 4, // Borrow
+            address: usdc_addr.clone(),
+            amount: borrow_amount,
+        });
+
+        let positions = pool.submit(&test_user, &test_user, &test_user, &requests);
+
+        // Convert d-tokens / b-tokens → underlying USDC using live rates.
+        let r = pool.get_reserve(&usdc_addr);
+        let d_rate = r.d_rate as f64 / SCALAR;
+        let b_rate = r.b_rate as f64 / SCALAR;
+
+        let coll_dtok = positions.collateral.get(usdc_index).unwrap_or(0);
+        let liab_btok = positions.liabilities.get(usdc_index).unwrap_or(0);
+
+        let actual_supplied = coll_dtok as f64 * d_rate / scalar_f;
+        let actual_borrowed = liab_btok as f64 * b_rate / scalar_f;
+        let actual_lev = actual_supplied / initial_f;
+
+        let theory_lev = leverage(n + 1, c_factor);
+
+        println!("  {:>4}  {:>14.2}  {:>14.2}  {:>8.4}×  {:>8.4}×  {:>+8.5}",
+            n + 1, actual_supplied, actual_borrowed,
+            actual_lev, theory_lev, actual_lev - theory_lev);
+    }
+
+    println!("  {}", "─".repeat(67));
+
+    // Final position summary.
+    let positions = pool.get_positions(&test_user);
+    let r = pool.get_reserve(&usdc_addr);
+    let coll_dtok = positions.collateral.get(usdc_index).unwrap_or(0);
+    let liab_btok = positions.liabilities.get(usdc_index).unwrap_or(0);
+    let final_supplied = coll_dtok as f64 * (r.d_rate as f64 / SCALAR) / scalar_f;
+    let final_borrowed = liab_btok as f64 * (r.b_rate as f64 / SCALAR) / scalar_f;
+    let final_lev = final_supplied / initial_f;
+    let final_hf = if final_borrowed > 0.0 {
+        (final_supplied * c_factor) / final_borrowed
+    } else {
+        f64::INFINITY
+    };
+
+    println!();
+    println!("  Final on-chain position after {N_LOOPS} loops:");
+    println!("    Supplied:  ${final_supplied:.2}");
+    println!("    Borrowed:  ${final_borrowed:.2}");
+    println!("    Leverage:  {final_lev:.4}×");
+    println!("    Health:    {final_hf:.4}");
+    println!("    Δ from theory: {:+.5}×", final_lev - leverage(N_LOOPS, c_factor));
+    println!();
+
+    // Sanity checks.
+    assert!(final_hf >= 1.05, "health factor dropped below safe threshold: {final_hf:.4}");
+    assert!(
+        (final_lev - leverage(N_LOOPS, c_factor)).abs() < 0.01,
+        "actual leverage deviates too far from theory: {final_lev:.4}× vs {:.4}×",
+        leverage(N_LOOPS, c_factor),
+    );
 }
