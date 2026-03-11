@@ -1,6 +1,7 @@
 use blend_contract_sdk::pool;
 use soroban_ledger_snapshot_source_tx::{Network, TxSnapshotSource};
 use soroban_sdk::{
+    testutils::Address as _,
     token::{StellarAssetClient, TokenClient},
     Address, Env, Vec,
 };
@@ -32,8 +33,8 @@ fn compute_rates(
     let cfg = &reserve.config;
 
     // Current utilization  (SCALAR cancels → dimensionless ratio)
-    let total_borrows = reserve.b_supply as f64 * reserve.b_rate as f64;
-    let total_supply = reserve.d_supply as f64 * reserve.d_rate as f64;
+    let total_borrows = reserve.data.b_supply as f64 * reserve.data.b_rate as f64;
+    let total_supply = reserve.data.d_supply as f64 * reserve.data.d_rate as f64;
     let util = if total_supply > 0.0 {
         total_borrows / total_supply
     } else {
@@ -55,7 +56,7 @@ fn compute_rates(
         r_base + r_one + r_two + r_three * (util - max_util) / (1.0 - max_util)
     };
 
-    let ir_mod = reserve.ir_mod as f64 / SCALAR;
+    let ir_mod = reserve.data.ir_mod as f64 / SCALAR;
     let borrow_apr = base_rate * ir_mod;
     let supply_apr = borrow_apr * util * (1.0 - bstop_rate);
 
@@ -141,8 +142,8 @@ fn simulate_usdc_leverage() {
     let (supply_apr, borrow_apr) = compute_rates(&reserve, bstop_rate);
 
     let util = {
-        let borrows = reserve.b_supply as f64 * reserve.b_rate as f64;
-        let supply = reserve.d_supply as f64 * reserve.d_rate as f64;
+        let borrows = reserve.data.b_supply as f64 * reserve.data.b_rate as f64;
+        let supply = reserve.data.d_supply as f64 * reserve.data.d_rate as f64;
         if supply > 0.0 {
             borrows / supply
         } else {
@@ -150,17 +151,67 @@ fn simulate_usdc_leverage() {
         }
     };
 
-    println!("\n  ┌──────────────────────────────────────┐");
-    println!("  │ USDC Reserve (live from mainnet fork) │");
-    println!("  ├──────────────────────────────────────┤");
-    println!("  │  Collateral factor (c):  {:>7.1}%    │", c_factor * 100.0);
-    println!("  │  Liquidation factor:     {:>7.1}%    │", l_factor * 100.0);
-    println!("  │  Utilization:            {:>7.2}%    │", util * 100.0);
-    println!("  │  Supply APR:             {:>7.2}%    │", supply_apr * 100.0);
-    println!("  │  Borrow APR:             {:>7.2}%    │", borrow_apr * 100.0);
-    println!("  │  Backstop take rate:     {:>7.1}%    │", bstop_rate * 100.0);
-    println!("  │  IR modifier:            {:>8.4}    │", reserve.ir_mod as f64 / SCALAR);
-    println!("  └──────────────────────────────────────┘");
+    // Supply cap + current pool totals.
+    let scalar_f = 10_f64.powi(cfg.decimals as i32);
+    let pool_supplied = reserve.data.d_supply as f64 * reserve.data.d_rate as f64 / SCALAR / scalar_f;
+    let pool_borrowed = reserve.data.b_supply as f64 * reserve.data.b_rate as f64 / SCALAR / scalar_f;
+    let supply_cap_usdc = if cfg.supply_cap > 0 {
+        Some(cfg.supply_cap as f64 / scalar_f)
+    } else {
+        None // 0 = uncapped
+    };
+    let cap_pct = supply_cap_usdc.map(|cap| pool_supplied / cap * 100.0);
+    let cap_room = supply_cap_usdc.map(|cap| cap - pool_supplied);
+
+    // BLND emissions: d-token index = cfg.index * 2, b-token = cfg.index * 2 + 1.
+    // eps is in 1e7-scaled BLND per second (1 BLND/s = eps of 1e7).
+    const SECONDS_PER_YEAR: f64 = 31_536_000.0;
+    let supply_eps = pool.get_reserve_emissions(&(cfg.index * 2))
+        .map(|e| e.eps).unwrap_or(0);
+    let borrow_eps = pool.get_reserve_emissions(&(cfg.index * 2 + 1))
+        .map(|e| e.eps).unwrap_or(0);
+    let pool_supply_blnd_yr = supply_eps as f64 * SECONDS_PER_YEAR / SCALAR;
+    let pool_borrow_blnd_yr = borrow_eps as f64 * SECONDS_PER_YEAR / SCALAR;
+
+    // BLND per $1 supplied/borrowed per year (pool-dilution approximation).
+    let blnd_per_usdc_supply = if pool_supplied > 0.0 { pool_supply_blnd_yr / pool_supplied } else { 0.0 };
+    let blnd_per_usdc_borrow = if pool_borrowed > 0.0 { pool_borrow_blnd_yr / pool_borrowed } else { 0.0 };
+
+    println!("\n  ┌─────────────────────────────────────────────────────────┐");
+    println!("  │        USDC Reserve (live from mainnet fork)            │");
+    println!("  ├─────────────────────────────────────────────────────────┤");
+    println!("  │  Collateral factor (c):  {:>7.1}%                       │", c_factor * 100.0);
+    println!("  │  Liquidation factor:     {:>7.1}%                       │", l_factor * 100.0);
+    println!("  │  Utilization:            {:>7.2}%                       │", util * 100.0);
+    println!("  │  Supply APR:             {:>7.2}%                       │", supply_apr * 100.0);
+    println!("  │  Borrow APR:             {:>7.2}%                       │", borrow_apr * 100.0);
+    println!("  │  Backstop take rate:     {:>7.1}%                       │", bstop_rate * 100.0);
+    println!("  │  IR modifier:            {:>8.4}                       │", reserve.data.ir_mod as f64 / SCALAR);
+    println!("  ├─────────────────────────────────────────────────────────┤");
+    println!("  │  Pool supplied:   {:>14.2} USDC                    │", pool_supplied);
+    println!("  │  Pool borrowed:   {:>14.2} USDC                    │", pool_borrowed);
+    match (supply_cap_usdc, cap_pct, cap_room) {
+        (Some(cap), Some(pct), Some(room)) => {
+            println!("  │  Supply cap:      {:>14.2} USDC  ({:>5.1}% used)     │", cap, pct);
+            println!("  │  Room remaining:  {:>14.2} USDC                    │", room);
+        }
+        _ => {
+            println!("  │  Supply cap:           uncapped                         │");
+        }
+    }
+    println!("  ├─────────────────────────────────────────────────────────┤");
+    if supply_eps == 0 && borrow_eps == 0 {
+        println!("  │  BLND emissions:   NONE configured for this reserve     │");
+    } else {
+        println!("  │  BLND supply eps: {:>12} (raw 1e7-scaled BLND/s)   │", supply_eps);
+        println!("  │  BLND borrow eps: {:>12} (raw 1e7-scaled BLND/s)   │", borrow_eps);
+        println!("  │  Pool supply BLND/yr: {:>10.1}                       │", pool_supply_blnd_yr);
+        println!("  │  Pool borrow BLND/yr: {:>10.1}                       │", pool_borrow_blnd_yr);
+        println!("  │  Per $1 supplied: {:>10.4} BLND/yr                    │", blnd_per_usdc_supply);
+        println!("  │  Per $1 borrowed: {:>10.4} BLND/yr                    │", blnd_per_usdc_borrow);
+        println!("  │  ⚠  Net APY below excludes BLND. Multiply by price.   │");
+    }
+    println!("  └─────────────────────────────────────────────────────────┘");
 
     // ── 5. Show user's current positions ─────────────────────────────────────
     let user = Address::from_str(&env, USER_ADDR);
@@ -185,10 +236,13 @@ fn simulate_usdc_leverage() {
     println!("  Max theoretical leverage:  {:.2}×  (= 1 / (1 − c))", max_lev);
     println!("  Max leveraged exposure:   ${:.0}", initial * max_lev);
 
+    // Combined BLND per $1 (supply + borrow sides scale together in a loop).
+    let blnd_per_usdc_net = blnd_per_usdc_supply + blnd_per_usdc_borrow;
+
     println!();
-    println!("  {:>4}  {:>14}  {:>14}  {:>9}  {:>13}  {:>14}",
-        "Loop", "Supplied  ($)", "Borrowed  ($)", "Leverage", "Health Factor", "Net APY");
-    println!("  {}", "─".repeat(75));
+    println!("  {:>4}  {:>12}  {:>12}  {:>8}  {:>11}  {:>10}  {:>10}  {}",
+        "Loop", "Supplied ($)", "Borrowed ($)", "Leverage", "HF", "Net APY", "BLND/yr", "⚠");
+    println!("  {}", "─".repeat(85));
 
     let mut last_safe_loops = 0usize;
 
@@ -205,27 +259,32 @@ fn simulate_usdc_leverage() {
         let net_yield = supply_apr * supplied - borrow_apr * borrowed;
         let net_apy = net_yield / initial * 100.0;
 
-        println!("  {:>4}  {:>14.2}  {:>14.2}  {:>8.2}×  {:>13}  {:>13.2}%",
-            n, supplied, borrowed, lev, hf_str, net_apy);
+        // BLND per year: supply side + borrow side, scaled by leverage.
+        let blnd_yr = supplied * blnd_per_usdc_supply + borrowed * blnd_per_usdc_borrow;
 
-        // Track loops where HF stays >= 1.05
+        // Cap warning: flag if leveraged supply would exceed remaining room.
+        let cap_warn = match cap_room {
+            Some(room) if supplied > pool_supplied + room => "CAP",
+            _ => "",
+        };
+
+        println!("  {:>4}  {:>12.2}  {:>12.2}  {:>7.2}×  {:>11}  {:>9.2}%  {:>10.1}  {}",
+            n, supplied, borrowed, lev, hf_str, net_apy, blnd_yr, cap_warn);
+
         let hf = if borrowed > 0.0 { (supplied * c_factor) / borrowed } else { f64::INFINITY };
-        if hf >= 1.05 {
-            last_safe_loops = n;
-        }
-
-        if lev / max_lev > 0.9999 {
-            break;
-        }
+        if hf >= 1.05 { last_safe_loops = n; }
+        if lev / max_lev > 0.9999 { break; }
     }
 
     // Theoretical infinity row
     let max_sup = initial * max_lev;
     let max_bor = max_sup - initial;
     let max_net_apy = (supply_apr * max_sup - borrow_apr * max_bor) / initial * 100.0;
-    println!("  {}", "─".repeat(75));
-    println!("  {:>4}  {:>14.2}  {:>14.2}  {:>8.2}×  {:>13.4}  {:>13.2}%",
-        "∞", max_sup, max_bor, max_lev, 1.0_f64, max_net_apy);
+    let max_blnd_yr = max_sup * blnd_per_usdc_supply + max_bor * blnd_per_usdc_borrow;
+    let max_cap_warn = match cap_room { Some(room) if max_sup > pool_supplied + room => "CAP", _ => "" };
+    println!("  {}", "─".repeat(85));
+    println!("  {:>4}  {:>12.2}  {:>12.2}  {:>7.2}×  {:>11.4}  {:>9.2}%  {:>10.1}  {}",
+        "∞", max_sup, max_bor, max_lev, 1.0_f64, max_net_apy, max_blnd_yr, max_cap_warn);
 
     // ── 7. Liquidation risk analysis ──────────────────────────────────────────
     println!();
@@ -249,16 +308,34 @@ fn simulate_usdc_leverage() {
     println!("  ├─────────────────────────────────────────────────────────┤");
 
     if supply_apr > borrow_apr {
-        println!("  │  ✓ Rate spread: +{:.2}%  (strategy earns yield)         │",
+        println!("  │  ✓ Rate spread: +{:.2}%  (strategy earns interest)      │",
             (supply_apr - borrow_apr) * 100.0);
-        println!("  │    Max net APY at {:.0}×: {:.2}%                         │",
+        println!("  │    Max net interest APY at {:.0}×: {:.2}%               │",
             max_lev, max_net_apy);
     } else {
         println!("  │  ✗ Borrow APR ({:.2}%) > Supply APR ({:.2}%)           │",
             borrow_apr * 100.0, supply_apr * 100.0);
-        println!("  │    Leverage COSTS money right now — do not loop!        │");
+        println!("  │    Interest spread is NEGATIVE — BLND is the only yield │");
     }
-
+    println!("  ├─────────────────────────────────────────────────────────┤");
+    if blnd_per_usdc_net > 0.0 {
+        let safe_blnd = initial * leverage(last_safe_loops, c_factor) * blnd_per_usdc_supply
+            + (initial * leverage(last_safe_loops, c_factor) - initial) * blnd_per_usdc_borrow;
+        println!("  │  BLND at safe max ({} loops, {:.2}×): {:.1} BLND/yr   │",
+            last_safe_loops, leverage(last_safe_loops, c_factor), safe_blnd);
+        println!("  │  BLND at 20× max:  {:.1} BLND/yr                    │", max_blnd_yr);
+        println!("  │  ⚠  BLND earned must be sold to realize APY.           │");
+        println!("  │  ⚠  claim() required — does not compound automatically. │");
+        if let Some(room) = cap_room {
+            if max_sup > pool_supplied + room {
+                println!("  │  ⚠  Supply cap hit before 20× — max safe supply:       │");
+                println!("  │     ${:.2} total (cap room: ${:.2})              │",
+                    pool_supplied + room, room);
+            }
+        }
+    } else {
+        println!("  │  No BLND emissions configured for USDC on this pool.   │");
+    }
     println!("  └─────────────────────────────────────────────────────────┘");
     println!();
 }
@@ -365,8 +442,8 @@ fn execute_leverage_loop() {
 
         // Convert d-tokens / b-tokens → underlying USDC using live rates.
         let r = pool.get_reserve(&usdc_addr);
-        let d_rate = r.d_rate as f64 / SCALAR;
-        let b_rate = r.b_rate as f64 / SCALAR;
+        let d_rate = r.data.d_rate as f64 / SCALAR;
+        let b_rate = r.data.b_rate as f64 / SCALAR;
 
         let coll_dtok = positions.collateral.get(usdc_index).unwrap_or(0);
         let liab_btok = positions.liabilities.get(usdc_index).unwrap_or(0);
@@ -389,8 +466,8 @@ fn execute_leverage_loop() {
     let r = pool.get_reserve(&usdc_addr);
     let coll_dtok = positions.collateral.get(usdc_index).unwrap_or(0);
     let liab_btok = positions.liabilities.get(usdc_index).unwrap_or(0);
-    let final_supplied = coll_dtok as f64 * (r.d_rate as f64 / SCALAR) / scalar_f;
-    let final_borrowed = liab_btok as f64 * (r.b_rate as f64 / SCALAR) / scalar_f;
+    let final_supplied = coll_dtok as f64 * (r.data.d_rate as f64 / SCALAR) / scalar_f;
+    let final_borrowed = liab_btok as f64 * (r.data.b_rate as f64 / SCALAR) / scalar_f;
     let final_lev = final_supplied / initial_f;
     let final_hf = if final_borrowed > 0.0 {
         (final_supplied * c_factor) / final_borrowed
