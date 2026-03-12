@@ -11,6 +11,29 @@
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
+  <!-- Disclaimer modal -->
+  <div id="disclaimer-overlay" class="disclaimer-overlay hidden">
+    <div class="disclaimer-modal">
+      <div class="disclaimer-modal-icon">&#9888;</div>
+      <h2>Important Disclaimer</h2>
+      <div class="disclaimer-body">
+        <p>This is an <strong>experimental project</strong>. Using leveraged positions on DeFi protocols carries significant financial risk, including the <strong>complete loss of your deposited funds</strong>.</p>
+        <p>By proceeding, you acknowledge that:</p>
+        <ul>
+          <li>You understand the risks of leveraged DeFi positions, including liquidation.</li>
+          <li>You use this tool <strong>entirely at your own risk</strong>. The developers accept no liability for any losses.</li>
+          <li>This software is provided as-is with no guarantees of correctness or availability.</li>
+          <li>You are <strong>not accessing this from a jurisdiction</strong> where using decentralized finance tools or cryptocurrency is prohibited or restricted by law.</li>
+        </ul>
+      </div>
+      <label class="disclaimer-check">
+        <input type="checkbox" id="disclaimer-checkbox" />
+        <span>I understand and accept these terms</span>
+      </label>
+      <button id="disclaimer-accept" class="btn btn-primary btn-lg" disabled>Enter App</button>
+    </div>
+  </div>
+
   <div id="app">
 
     <!-- Sidebar -->
@@ -21,7 +44,29 @@
           <span class="logo-text">Blend<span class="logo-accent">Lev</span></span>
         </div>
         <nav class="sidebar-nav">
-          <div id="pool-tabs" class="pool-tabs"></div>
+          <!-- Protocol: Blend -->
+          <div class="protocol-section">
+            <button class="protocol-btn active" id="proto-blend">
+              <span class="protocol-dot protocol-dot-live"></span>
+              Blend Protocol
+            </button>
+            <div id="pool-tabs" class="pool-tabs"></div>
+          </div>
+          <!-- Swap -->
+          <div class="protocol-section">
+            <button class="protocol-btn" id="proto-swap">
+              <span class="protocol-icon">&#8644;</span>
+              Swap
+            </button>
+          </div>
+          <!-- Coming soon -->
+          <div class="protocol-section">
+            <button class="protocol-btn protocol-btn-disabled" disabled>
+              <span class="protocol-dot protocol-dot-soon"></span>
+              More Protocols
+              <span class="coming-soon-badge">Soon</span>
+            </button>
+          </div>
         </nav>
       </div>
       <div class="sidebar-bottom">
@@ -240,6 +285,55 @@
 
           </div><!-- .two-col -->
         </div><!-- #dashboard -->
+
+        <!-- Swap view -->
+        <div id="swap-view" class="hidden">
+          <section class="card swap-card">
+            <div class="card-header">
+              <h2>Swap</h2>
+              <span class="swap-powered">via Stellar Broker</span>
+            </div>
+
+            <div class="form-group">
+              <label>You sell</label>
+              <div class="swap-input-row">
+                <input type="number" id="swap-sell-amount" class="input mono" placeholder="0.00" min="0" step="any" />
+                <select id="swap-sell-asset" class="swap-asset-select"></select>
+              </div>
+              <span class="balance-hint">Wallet: <span id="swap-sell-balance">—</span></span>
+            </div>
+
+            <div class="swap-arrow-row">
+              <button id="swap-reverse" class="swap-arrow-btn" title="Reverse pair">&#8645;</button>
+            </div>
+
+            <div class="form-group">
+              <label>You receive (estimated)</label>
+              <div class="swap-input-row">
+                <input type="text" id="swap-buy-amount" class="input mono" placeholder="—" readonly />
+                <select id="swap-buy-asset" class="swap-asset-select"></select>
+              </div>
+            </div>
+
+            <div class="swap-quote-details hidden" id="swap-quote-details">
+              <div class="preview-row">
+                <span>Rate</span><strong id="swap-rate" class="mono">—</strong>
+              </div>
+              <div class="preview-row">
+                <span>Direct trade</span><strong id="swap-direct" class="mono">—</strong>
+              </div>
+              <div class="preview-row">
+                <span>Broker advantage</span><strong id="swap-profit" class="mono">—</strong>
+              </div>
+              <div class="preview-row">
+                <span>Slippage tolerance</span><strong class="mono">2%</strong>
+              </div>
+            </div>
+
+            <button id="swap-btn" class="btn btn-primary btn-lg" disabled>Get Quote</button>
+            <p class="disclaimer">Swaps are executed through <a href="https://stellar.broker" target="_blank" rel="noopener">Stellar Broker</a> for best-route aggregation across Stellar DEXes.</p>
+          </section>
+        </div>
 
         <!-- Toast -->
         <div id="toast" class="toast hidden">

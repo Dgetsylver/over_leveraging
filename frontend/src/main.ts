@@ -9,6 +9,7 @@ import { AlbedoModule }      from "@creit-tech/stellar-wallets-kit/modules/albed
 import { LobstrModule }      from "@creit-tech/stellar-wallets-kit/modules/lobstr";
 import { HanaModule }        from "@creit-tech/stellar-wallets-kit/modules/hana";
 import { Networks }          from "@creit-tech/stellar-wallets-kit/types";
+import { estimateSwap }      from "@stellar-broker/client";
 
 import {
   KNOWN_POOLS,
@@ -77,6 +78,25 @@ applyTheme(savedTheme ?? getSystemTheme());
 window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
   if (!localStorage.getItem("theme")) applyTheme(getSystemTheme());
 });
+
+// ── Disclaimer ───────────────────────────────────────────────────────────
+
+if (!localStorage.getItem("disclaimerAccepted")) {
+  document.getElementById("disclaimer-overlay")!.classList.remove("hidden");
+}
+document.getElementById("disclaimer-checkbox")!.addEventListener("change", (e) => {
+  (document.getElementById("disclaimer-accept") as HTMLButtonElement).disabled =
+    !(e.target as HTMLInputElement).checked;
+});
+document.getElementById("disclaimer-accept")!.addEventListener("click", () => {
+  localStorage.setItem("disclaimerAccepted", "1");
+  document.getElementById("disclaimer-overlay")!.classList.add("hidden");
+});
+
+// ── Active view (leverage | swap) ────────────────────────────────────────
+
+type AppView = "leverage" | "swap";
+let activeView: AppView = "leverage";
 
 // ── Expert mode ──────────────────────────────────────────────────────────────
 
@@ -627,6 +647,175 @@ async function disconnect() {
   $("dashboard").classList.add("hidden");
 }
 
+// ── View switching (Leverage / Swap) ─────────────────────────────────────
+
+function switchView(view: AppView) {
+  activeView = view;
+  const blendBtn = $("proto-blend");
+  const swapBtn  = $("proto-swap");
+  blendBtn.classList.toggle("active", view === "leverage");
+  swapBtn.classList.toggle("active", view === "swap");
+
+  // Toggle pool tabs visibility
+  $("pool-tabs").style.display = view === "leverage" ? "" : "none";
+
+  if (view === "leverage") {
+    $("swap-view").classList.add("hidden");
+    if (userAddress) {
+      $("dashboard").classList.remove("hidden");
+      $("connect-prompt").classList.add("hidden");
+    } else {
+      $("dashboard").classList.add("hidden");
+      $("connect-prompt").classList.remove("hidden");
+    }
+    // Show asset tabs & header elements for leverage
+    $("asset-tabs").style.display = "";
+  } else {
+    $("dashboard").classList.add("hidden");
+    $("connect-prompt").classList.add("hidden");
+    $("swap-view").classList.remove("hidden");
+    // Hide asset tabs in swap mode
+    $("asset-tabs").style.display = "none";
+    populateSwapAssets();
+    updateSwapBtn();
+  }
+}
+
+// ── Swap assets ──────────────────────────────────────────────────────────
+
+const SWAP_ASSETS: { symbol: string; id: string }[] = [
+  { symbol: "XLM",  id: "native" },
+  { symbol: "USDC", id: "USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN" },
+  { symbol: "BLND", id: "BLND-CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY" },
+  { symbol: "AQUA", id: "AQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA" },
+];
+
+// Add pool assets dynamically
+function getSwapAssetList(): { symbol: string; id: string }[] {
+  const seen = new Set(SWAP_ASSETS.map(a => a.id));
+  const list = [...SWAP_ASSETS];
+  for (const pool of KNOWN_POOLS) {
+    for (const asset of getPoolAssets(pool)) {
+      if (!seen.has(asset.id)) {
+        seen.add(asset.id);
+        list.push({ symbol: asset.symbol, id: asset.id });
+      }
+    }
+  }
+  return list;
+}
+
+function populateSwapAssets() {
+  const sellSelect = $("swap-sell-asset") as HTMLSelectElement;
+  const buySelect  = $("swap-buy-asset") as HTMLSelectElement;
+  if (sellSelect.options.length > 0) return; // already populated
+
+  const list = getSwapAssetList();
+  list.forEach(a => {
+    sellSelect.add(new Option(a.symbol, a.id));
+    buySelect.add(new Option(a.symbol, a.id));
+  });
+  // Defaults: sell XLM, buy USDC
+  sellSelect.value = "native";
+  if (list.find(a => a.id.startsWith("USDC"))) {
+    buySelect.value = list.find(a => a.id.startsWith("USDC"))!.id;
+  } else {
+    buySelect.selectedIndex = 1;
+  }
+}
+
+/** Convert our asset id format to Stellar Broker format */
+function toBrokerAsset(id: string): string {
+  if (id === "native") return "XLM";
+  // Our format: CODE-ISSUER  → Broker format: CODE-ISSUER (same)
+  return id;
+}
+
+let _quoteTimer: ReturnType<typeof setTimeout> | null = null;
+let _lastQuote: any = null;
+
+async function fetchSwapQuote() {
+  const sellAmount = ($("swap-sell-amount") as HTMLInputElement).value;
+  const sellAsset  = ($("swap-sell-asset") as HTMLSelectElement).value;
+  const buyAsset   = ($("swap-buy-asset") as HTMLSelectElement).value;
+
+  if (!sellAmount || parseFloat(sellAmount) <= 0 || sellAsset === buyAsset) {
+    $("swap-quote-details").classList.add("hidden");
+    ($("swap-buy-amount") as HTMLInputElement).value = "";
+    _lastQuote = null;
+    updateSwapBtn();
+    return;
+  }
+
+  try {
+    const quote = await estimateSwap({
+      sellingAsset: toBrokerAsset(sellAsset),
+      buyingAsset: toBrokerAsset(buyAsset),
+      sellingAmount: sellAmount,
+      slippageTolerance: 0.02,
+    });
+
+    _lastQuote = quote;
+
+    if (quote.status === "success" && quote.estimatedBuyingAmount) {
+      ($("swap-buy-amount") as HTMLInputElement).value = parseFloat(quote.estimatedBuyingAmount).toFixed(7);
+
+      const sellNum = parseFloat(sellAmount);
+      const buyNum  = parseFloat(quote.estimatedBuyingAmount);
+      const sellSym = ($("swap-sell-asset") as HTMLSelectElement).selectedOptions[0].text;
+      const buySym  = ($("swap-buy-asset") as HTMLSelectElement).selectedOptions[0].text;
+
+      $("swap-rate").textContent = `1 ${sellSym} ≈ ${(buyNum / sellNum).toFixed(6)} ${buySym}`;
+      $("swap-direct").textContent = quote.directTrade
+        ? `${parseFloat(quote.directTrade.buying).toFixed(7)} ${buySym}`
+        : "—";
+      $("swap-profit").textContent = quote.profit ? `${quote.profit}` : "—";
+      $("swap-quote-details").classList.remove("hidden");
+    } else {
+      ($("swap-buy-amount") as HTMLInputElement).value = quote.status === "unfeasible" ? "No route" : "—";
+      $("swap-quote-details").classList.add("hidden");
+      _lastQuote = null;
+    }
+  } catch (e: any) {
+    ($("swap-buy-amount") as HTMLInputElement).value = "Error";
+    $("swap-quote-details").classList.add("hidden");
+    _lastQuote = null;
+    console.error("Swap quote error:", e);
+  }
+  updateSwapBtn();
+}
+
+function updateSwapBtn() {
+  const btn = $("swap-btn") as HTMLButtonElement;
+  const sellAmount = ($("swap-sell-amount") as HTMLInputElement).value;
+  const hasAmount = sellAmount && parseFloat(sellAmount) > 0;
+  const sellAsset = ($("swap-sell-asset") as HTMLSelectElement).value;
+  const buyAsset  = ($("swap-buy-asset") as HTMLSelectElement).value;
+  const samePair = sellAsset === buyAsset;
+
+  if (!userAddress) {
+    btn.textContent = "Connect Wallet";
+    btn.disabled = true;
+  } else if (samePair) {
+    btn.textContent = "Select different assets";
+    btn.disabled = true;
+  } else if (!hasAmount) {
+    btn.textContent = "Enter amount";
+    btn.disabled = true;
+  } else if (_lastQuote && _lastQuote.status === "success") {
+    btn.textContent = "Swap (coming soon)";
+    btn.disabled = true; // Execution will be enabled in a future update
+  } else {
+    btn.textContent = "Get Quote";
+    btn.disabled = true;
+  }
+}
+
+function debounceQuote() {
+  if (_quoteTimer) clearTimeout(_quoteTimer);
+  _quoteTimer = setTimeout(fetchSwapQuote, 500);
+}
+
 // ── Event listeners ───────────────────────────────────────────────────────────
 
 $("expert-toggle").addEventListener("click", () => {
@@ -644,6 +833,35 @@ $("theme-toggle").addEventListener("click", () => {
   localStorage.setItem("theme", next);
   applyTheme(next);
 });
+
+// Protocol nav
+$("proto-blend").addEventListener("click", () => switchView("leverage"));
+$("proto-swap").addEventListener("click",  () => switchView("swap"));
+
+// Swap events
+$("swap-sell-amount").addEventListener("input", debounceQuote);
+$("swap-sell-asset").addEventListener("change", () => { _lastQuote = null; debounceQuote(); updateSwapBalance(); });
+$("swap-buy-asset").addEventListener("change",  () => { _lastQuote = null; debounceQuote(); });
+$("swap-reverse").addEventListener("click", () => {
+  const sell = $("swap-sell-asset") as HTMLSelectElement;
+  const buy  = $("swap-buy-asset") as HTMLSelectElement;
+  const tmp = sell.value;
+  sell.value = buy.value;
+  buy.value = tmp;
+  _lastQuote = null;
+  debounceQuote();
+  updateSwapBalance();
+});
+
+async function updateSwapBalance() {
+  if (!userAddress) return;
+  const sellAsset = ($("swap-sell-asset") as HTMLSelectElement).value;
+  try {
+    const bal = await fetchAssetBalance(userAddress, sellAsset);
+    const sym = ($("swap-sell-asset") as HTMLSelectElement).selectedOptions[0].text;
+    $("swap-sell-balance").textContent = `${fmt(bal, 4)} ${sym}`;
+  } catch { $("swap-sell-balance").textContent = "—"; }
+}
 
 $("connect-btn").addEventListener("click",    connect);
 $("switch-wallet-btn").addEventListener("click", switchWallet);
