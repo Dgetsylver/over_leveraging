@@ -570,25 +570,27 @@ export async function buildOpenPositionXdr(
   return SorobanRpc.assembleTransaction(tx, sim).build().toXDR();
 }
 
-export async function buildClosePositionXdr(
+/**
+ * Build just the WITHDRAW + REPAY submit transaction for closing a position.
+ * The approve must be built and submitted FIRST (separately) so that both
+ * transactions use distinct sequence numbers. Call buildApproveXdr with
+ * Math.ceil(pos.debt * SCALAR_F * 1.01) as the amount before calling this.
+ */
+export async function buildCloseSubmitXdr(
   pool: PoolDef,
   userAddress: string,
   pos: AssetPosition,
-): Promise<{ approveXdr: string; submitXdr: string }> {
-  // Approve a 1% buffer in case interest has accrued between read and submit
-  const netDebitBuf = BigInt(Math.ceil(pos.debt * SCALAR_F * 0.01));
-  const approveXdr  = await buildApproveXdr(pool, userAddress, pos.asset.id, netDebitBuf);
-
+): Promise<string> {
   // WITHDRAW all collateral (b-tokens → actual tokens), REPAY all debt + 0.5% buffer
-  const debtWithBuf = BigInt(Math.ceil(pos.debt * SCALAR_F * 1.005));
-  const requests    = buildRequestsVec([
+  const debtWithBuf  = BigInt(Math.ceil(pos.debt * SCALAR_F * 1.005));
+  const requests     = buildRequestsVec([
     buildRequest(pos.asset.id, pos.bTokens, WITHDRAW_COLLATERAL),
     buildRequest(pos.asset.id, debtWithBuf, REPAY),
   ]);
 
   const poolContract = new Contract(pool.id);
   const addrScVal    = new Address(userAddress).toScVal();
-  const acc          = await server.getAccount(userAddress);
+  const acc          = await server.getAccount(userAddress); // fresh seq after approve
   const tx           = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
     networkPassphrase: NETWORK,
@@ -599,10 +601,7 @@ export async function buildClosePositionXdr(
   const sim = await server.simulateTransaction(tx);
   if (!SorobanRpc.Api.isSimulationSuccess(sim))
     throw new Error(`Close simulation failed: ${(sim as SorobanRpc.Api.SimulateTransactionErrorResponse).error}`);
-  return {
-    approveXdr,
-    submitXdr: SorobanRpc.assembleTransaction(tx, sim).build().toXDR(),
-  };
+  return SorobanRpc.assembleTransaction(tx, sim).build().toXDR();
 }
 
 /**

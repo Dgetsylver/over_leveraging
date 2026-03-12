@@ -20,7 +20,7 @@ import {
   fetchPoolPendingBlnd,
   buildApproveXdr,
   buildOpenPositionXdr,
-  buildClosePositionXdr,
+  buildCloseSubmitXdr,
   buildClaimXdr,
   submitSignedXdr,
   hfForLeverage,
@@ -409,8 +409,13 @@ async function closePosition() {
   if (!pos) return;
   setLoading($("close-btn") as HTMLButtonElement, true);
   try {
-    const { approveXdr, submitXdr } = await buildClosePositionXdr(selectedPool, userAddress, pos);
-    await signAndSubmit(approveXdr, `Approve ${selectedAsset.symbol} (close buffer)`);
+    // Step 1: approve debt + 1% buffer FIRST so the close tx gets a fresh sequence number
+    const approveAmount = BigInt(Math.ceil(pos.debt * 1e7 * 1.01));
+    const approveXdr    = await buildApproveXdr(selectedPool, userAddress, pos.asset.id, approveAmount);
+    await signAndSubmit(approveXdr, `Approve ${selectedAsset.symbol} (close)`);
+
+    // Step 2: build close tx AFTER approve confirms — fresh account sequence number
+    const submitXdr = await buildCloseSubmitXdr(selectedPool, userAddress, pos);
     await signAndSubmit(submitXdr, `Close ${selectedAsset.symbol} position`);
     await loadAll();
   } catch (e: any) {
