@@ -576,8 +576,11 @@ export async function buildOpenPositionXdr(
 
 /**
  * Build a WITHDRAW + REPAY transaction to fully close a leveraged position.
- * Uses submit with Soroban auth propagation — no approve needed.
- * Amounts are derived from exact b/d-token share counts to avoid residuals.
+ *
+ * Uses submit_with_allowance which NETS transfers: for close, the net is
+ * collateral − debt = equity, so the pool just sends equity to the user.
+ * No approve step needed (net flow is pool → user, not user → pool).
+ * No buffer on REPAY to avoid InvalidDTokenBurnAmount (#1219).
  */
 export async function buildCloseSubmitXdr(
   pool: PoolDef,
@@ -586,7 +589,7 @@ export async function buildCloseSubmitXdr(
 ): Promise<string> {
   // Exact underlying amounts from b/d-token shares × exchange rate
   const withdrawAmount = pos.bTokens * pos.bRate / RATE_DEC;
-  const repayAmount    = pos.dTokens * pos.dRate / RATE_DEC * 1005n / 1000n; // +0.5% buffer
+  const repayAmount    = pos.dTokens * pos.dRate / RATE_DEC; // exact, no buffer
   const requests       = buildRequestsVec([
     buildRequest(pos.asset.id, withdrawAmount, WITHDRAW_COLLATERAL),
     buildRequest(pos.asset.id, repayAmount,    REPAY),
@@ -599,7 +602,7 @@ export async function buildCloseSubmitXdr(
     fee: (BigInt(BASE_FEE) * 10n).toString(),
     networkPassphrase: NETWORK,
   })
-    .addOperation(poolContract.call("submit", addrScVal, addrScVal, addrScVal, requests))
+    .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
     .setTimeout(60).build();
 
   const sim = await server.simulateTransaction(tx);
@@ -610,21 +613,20 @@ export async function buildCloseSubmitXdr(
 
 /**
  * Repay all outstanding debt without fully closing the position.
- * Withdraws just enough collateral to cover the debt, then repays —
- * all in one atomic submit call. Blend checks HF only at the end,
- * so the intermediate state (tokens in flight) is fine. Result: same
- * equity, zero debt, reduced collateral (user is de-leveraged).
+ * Withdraws exactly the debt amount from collateral and repays it — all in
+ * one atomic submit_with_allowance call. Blend's netting means the net token
+ * flow is ≈0, so no user wallet balance is needed and no approve step.
+ * Result: same equity, zero debt, reduced collateral (user is de-leveraged).
  */
 export async function buildRepayXdr(
   pool: PoolDef,
   userAddress: string,
   pos: AssetPosition,
 ): Promise<string> {
-  // Withdraw slightly more than the exact debt to cover interest accrued during tx
-  const repayAmount = pos.dTokens * pos.dRate / RATE_DEC * 1005n / 1000n; // +0.5% buffer
-  const requests    = buildRequestsVec([
-    buildRequest(pos.asset.id, repayAmount, WITHDRAW_COLLATERAL), // pull from pool → wallet
-    buildRequest(pos.asset.id, repayAmount, REPAY),               // push from wallet → pool
+  const debtAmount = pos.dTokens * pos.dRate / RATE_DEC; // exact, no buffer
+  const requests   = buildRequestsVec([
+    buildRequest(pos.asset.id, debtAmount, WITHDRAW_COLLATERAL),
+    buildRequest(pos.asset.id, debtAmount, REPAY),
   ]);
 
   const poolContract = new Contract(pool.id);
@@ -634,7 +636,7 @@ export async function buildRepayXdr(
     fee: (BigInt(BASE_FEE) * 10n).toString(),
     networkPassphrase: NETWORK,
   })
-    .addOperation(poolContract.call("submit", addrScVal, addrScVal, addrScVal, requests))
+    .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
     .setTimeout(60).build();
 
   const sim = await server.simulateTransaction(tx);
