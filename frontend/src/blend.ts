@@ -183,12 +183,12 @@ export async function fetchBlndPrice(userAddress: string): Promise<number> {
   // 2. Fallback: CoinGecko free API
   try {
     const res = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=blend-2&vs_currencies=usd",
+      "https://api.coingecko.com/api/v3/simple/price?ids=blend&vs_currencies=usd",
       { signal: AbortSignal.timeout(6000) },
     );
     if (res.ok) {
       const data = await res.json() as any;
-      _blndPriceCache = data["blend-2"]?.usd ?? 0;
+      _blndPriceCache = data["blend"]?.usd ?? 0;
       console.log("[blend] BLND price from CoinGecko:", _blndPriceCache);
       return _blndPriceCache!;
     }
