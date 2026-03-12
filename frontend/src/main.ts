@@ -353,6 +353,21 @@ function updatePreview() {
     const netApr = rs.netSupplyApr * lev - rs.netBorrowCost * (lev - 1);
     $("prev-net-apr").textContent = `${fmt(netApr, 2)}% APY on equity`;
     $("prev-net-apr").className   = `prev-net-apr ${netApr > 0 ? "apr-great" : "apr-bad"}`;
+
+    // Days until liquidation at this leverage (interest-only, no BLND)
+    const spreadPct = rs.interestBorrowApr - rs.interestSupplyApr;
+    const prevLiqEl = $("prev-liq-days");
+    if (spreadPct <= 0) {
+      prevLiqEl.textContent = "Never";
+      prevLiqEl.className   = "hf-ok";
+    } else if (isFinite(hf) && hf > 1) {
+      const days = Math.log(hf) / (spreadPct / 100) * 365;
+      prevLiqEl.textContent = days > 3650 ? ">10 years" : `~${Math.round(days)} days`;
+      prevLiqEl.className   = days < 30 ? "hf-bad" : days < 90 ? "hf-warn" : "hf-ok";
+    } else {
+      prevLiqEl.textContent = "—";
+      prevLiqEl.className   = "";
+    }
   }
 
   // Liquidity check: first borrow step must fit within pool available + what your deposit unlocks.
