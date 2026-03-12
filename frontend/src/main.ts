@@ -191,9 +191,12 @@ function selectAsset(asset: AssetInfo) {
 async function refreshTabData() {
   if (!userAddress) return;
   try {
+    const pos = positions.byAsset.get(selectedAsset.id);
+    const rs  = reserves.find(r => r.asset.id === selectedAsset.id);
     const [bal, blnd] = await Promise.all([
       fetchAssetBalance(userAddress, selectedAsset.id),
-      fetchPendingBlnd(selectedPool, userAddress, selectedAsset),
+      fetchPendingBlnd(selectedPool, userAddress, selectedAsset, rs,
+        pos?.bTokens ?? 0n, pos?.dTokens ?? 0n),
     ]);
     $("asset-balance").textContent = `${fmt(bal, 4)} ${selectedAsset.symbol}`;
     $("pos-blnd").textContent      = `${fmt(blnd, 4)} BLND`;
@@ -274,6 +277,18 @@ function renderPosition() {
   const bar = $("hf-bar");
   bar.style.width      = `${barPct}%`;
   bar.style.background = hf > 1.1 ? "var(--success)" : hf > 1.03 ? "var(--warning)" : "var(--danger)";
+
+  // Net APY at current leverage
+  const rs = reserves.find(r => r.asset.id === selectedAsset.id);
+  const netAprEl = $("pos-net-apr");
+  if (rs && pos.leverage > 0) {
+    const netApr = rs.netSupplyApr * pos.leverage - rs.netBorrowCost * (pos.leverage - 1);
+    netAprEl.textContent = `${netApr >= 0 ? "+" : ""}${fmt(netApr, 2)}%`;
+    netAprEl.className   = `metric-value ${netApr > 0 ? "hf-ok" : "hf-bad"}`;
+  } else {
+    netAprEl.textContent = "—";
+    netAprEl.className   = "metric-value";
+  }
 }
 
 // ── Leverage preview ──────────────────────────────────────────────────────────
@@ -321,7 +336,10 @@ async function loadAll() {
     $("asset-balance").textContent = `${fmt(bal, 4)} ${selectedAsset.symbol}`;
 
     // Update pending BLND for selected asset
-    const blnd = await fetchPendingBlnd(selectedPool, userAddress, selectedAsset);
+    const posForBlnd = positions.byAsset.get(selectedAsset.id);
+    const rsForBlnd  = reserves.find(r => r.asset.id === selectedAsset.id);
+    const blnd = await fetchPendingBlnd(selectedPool, userAddress, selectedAsset, rsForBlnd,
+      posForBlnd?.bTokens ?? 0n, posForBlnd?.dTokens ?? 0n);
     $("pos-blnd").textContent    = `${fmt(blnd, 4)} BLND`;
     ($("claim-btn") as HTMLButtonElement).disabled = blnd <= 0;
 

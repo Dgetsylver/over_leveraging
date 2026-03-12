@@ -267,6 +267,8 @@ export interface ReserveStats {
   available:     number;   // available to borrow
   bRate:         bigint;
   dRate:         bigint;
+  bSupply:       bigint;   // raw b-token shares outstanding
+  dSupply:       bigint;   // raw d-token shares outstanding
   interestBorrowApr: number; // % pa — interest rate model
   interestSupplyApr: number; // % pa — after backstop take
   blndSupplyApr:     number; // % pa — BLND emissions on supply side
@@ -275,6 +277,8 @@ export interface ReserveStats {
   netBorrowCost:     number; // interest - blnd (usually just interest)
   supplyEps:         bigint; // raw eps from pool, 0 if no emissions
   borrowEps:         bigint;
+  supplyEmission:    any;    // raw get_reserve_emissions result for supply token
+  borrowEmission:    any;    // raw get_reserve_emissions result for borrow token
 }
 
 export async function fetchAllReserves(pool: PoolDef, userAddress: string): Promise<ReserveStats[]> {
@@ -304,10 +308,10 @@ export async function fetchAllReserves(pool: PoolDef, userAddress: string): Prom
       const priceUsd = priceRaw ? Number(BigInt(priceRaw.price)) / pool.oracleDec : 0;
 
 
-      const bRate    = reserveRaw ? BigInt(reserveRaw.data.b_rate) : RATE_DEC;
-      const dRate    = reserveRaw ? BigInt(reserveRaw.data.d_rate) : RATE_DEC;
-      const bSupply  = reserveRaw ? BigInt(reserveRaw.data.b_supply) : 0n;
-      const dSupply  = reserveRaw ? BigInt(reserveRaw.data.d_supply) : 0n;
+      const bRate   = reserveRaw ? BigInt(reserveRaw.data.b_rate)   : RATE_DEC;
+      const dRate   = reserveRaw ? BigInt(reserveRaw.data.d_rate)   : RATE_DEC;
+      const bSupply = reserveRaw ? BigInt(reserveRaw.data.b_supply) : 0n;
+      const dSupply = reserveRaw ? BigInt(reserveRaw.data.d_supply) : 0n;
 
       const totalSupply  = Number(bSupply * bRate / RATE_DEC) / SCALAR_F;
       const totalBorrow  = Number(dSupply * dRate / RATE_DEC) / SCALAR_F;
@@ -382,6 +386,8 @@ export async function fetchAllReserves(pool: PoolDef, userAddress: string): Prom
         available,
         bRate,
         dRate,
+        bSupply,
+        dSupply,
         interestBorrowApr,
         interestSupplyApr,
         blndSupplyApr,
@@ -390,6 +396,8 @@ export async function fetchAllReserves(pool: PoolDef, userAddress: string): Prom
         netBorrowCost: interestBorrowApr - blndBorrowApr,
         supplyEps,
         borrowEps,
+        supplyEmission: supplyEmissions,
+        borrowEmission: borrowEmissions,
       });
   }
   return results;
@@ -458,24 +466,81 @@ export async function fetchAssetBalance(userAddress: string, assetId: string): P
   return Number(stroops) / SCALAR_F;
 }
 
+/**
+ * Compute full pending BLND for one asset (supply + borrow sides).
+ *
+ * `get_user_emissions` only returns the checkpointed `accrued` value — it does
+ * NOT include emissions that have accrued since the user's last interaction.
+ * Full formula:
+ *   current_reserve_index = reserve.index + eps * min(now, expiration - last_time) * SCALAR / total_tokens
+ *   user_pending = user.accrued + (current_reserve_index - user.index) * user_tokens / SCALAR
+ */
 export async function fetchPendingBlnd(
   pool: PoolDef,
   userAddress: string,
   asset: AssetInfo,
+  rs: ReserveStats | undefined,
+  bTokens: bigint,
+  dTokens: bigint,
 ): Promise<number> {
   const poolContract = new Contract(pool.id);
-  let total  = 0;
-  for (const tokenId of [asset.supplyTokenId, asset.borrowTokenId]) {
-    const raw = await simulate(
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  let total = 0n;
+
+  const sides = [
+    {
+      tokenId:     asset.supplyTokenId,
+      userTokens:  bTokens,
+      totalTokens: rs?.bSupply ?? 0n,
+      cachedEmit:  rs?.supplyEmission,
+    },
+    {
+      tokenId:     asset.borrowTokenId,
+      userTokens:  dTokens,
+      totalTokens: rs?.dSupply ?? 0n,
+      cachedEmit:  rs?.borrowEmission,
+    },
+  ];
+
+  for (const { tokenId, userTokens, totalTokens, cachedEmit } of sides) {
+    if (userTokens === 0n) continue;
+
+    // Fetch user emission checkpoint (always need fresh data for the user)
+    const userEmission = await simulate(
       poolContract.call(
         "get_user_emissions",
         new Address(userAddress).toScVal(),
         nativeToScVal(tokenId, { type: "u32" }),
       )
     );
-    if (raw?.accrued) total += Number(BigInt(raw.accrued)) / SCALAR_F;
+    if (!userEmission) continue;
+
+    const userAccrued = BigInt(userEmission.accrued);
+    const userIndex   = BigInt(userEmission.index);
+
+    // Use cached reserve emission data if available (already fetched in fetchAllReserves),
+    // otherwise fetch fresh from chain.
+    const resEmission = cachedEmit ?? await simulate(
+      poolContract.call("get_reserve_emissions", nativeToScVal(tokenId, { type: "u32" }))
+    );
+
+    let currentIndex = resEmission ? BigInt(resEmission.index) : 0n;
+    if (resEmission && totalTokens > 0n) {
+      const eps        = BigInt(resEmission.eps);
+      const lastTime   = BigInt(resEmission.last_time);
+      const expiration = BigInt(resEmission.expiration);
+      const endTime    = now < expiration ? now : expiration;
+      const deltaT     = endTime > lastTime ? endTime - lastTime : 0n;
+      // index grows by eps * deltaT * SCALAR / total_tokens (avoids integer division loss)
+      currentIndex += eps * deltaT * SCALAR / totalTokens;
+    }
+
+    const indexDelta = currentIndex - userIndex;
+    const pending    = userAccrued + (indexDelta > 0n ? indexDelta * userTokens / SCALAR : 0n);
+    if (pending > 0n) total += pending;
   }
-  return total;
+
+  return Number(total) / SCALAR_F;
 }
 
 // ── Leverage math ─────────────────────────────────────────────────────────────
