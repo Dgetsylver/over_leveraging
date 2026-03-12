@@ -55,6 +55,29 @@ let selectedPool: PoolDef        = KNOWN_POOLS[0]; // default: Etherfuse
 let assets: AssetInfo[]          = getPoolAssets(selectedPool);
 let selectedAsset: AssetInfo     = assets[2]; // default: CETES (index 2 in Etherfuse)
 
+// ── Theme ────────────────────────────────────────────────────────────────────
+
+type Theme = "light" | "dark";
+
+function getSystemTheme(): Theme {
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function applyTheme(theme: Theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  const btn = document.getElementById("theme-toggle");
+  if (btn) btn.innerHTML = theme === "dark" ? "&#9790;" : "&#9728;";
+}
+
+// Initialize: check localStorage override, else follow system
+const savedTheme = localStorage.getItem("theme") as Theme | null;
+applyTheme(savedTheme ?? getSystemTheme());
+
+// Listen for system changes (only when no manual override)
+window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+  if (!localStorage.getItem("theme")) applyTheme(getSystemTheme());
+});
+
 // ── Expert mode ──────────────────────────────────────────────────────────────
 
 let expertMode = false;
@@ -604,9 +627,15 @@ $("expert-toggle").addEventListener("click", () => {
   const btn = $("expert-toggle");
   btn.classList.toggle("expert-active", expertMode);
   btn.textContent = expertMode ? "Expert ON" : "Expert";
-  // Recalculate slider max and preview with new minHF
   renderSelectedAsset();
   updatePreview();
+});
+
+$("theme-toggle").addEventListener("click", () => {
+  const current = document.documentElement.getAttribute("data-theme") as Theme || getSystemTheme();
+  const next: Theme = current === "dark" ? "light" : "dark";
+  localStorage.setItem("theme", next);
+  applyTheme(next);
 });
 
 $("connect-btn").addEventListener("click",    connect);
