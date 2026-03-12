@@ -301,34 +301,27 @@ function renderPosition() {
   }
 
   // Days until liquidation — interest-only drift (no BLND emissions).
-  // HF erodes when borrow interest > supply interest at current leverage.
-  // Daily HF change = (interestSupplyApr × lev − interestBorrowApr × (lev−1)) / 365
-  //   positive = HF improving, negative = HF eroding toward 1.0
+  //
+  // With compound interest both collateral and debt grow exponentially:
+  //   HF(t) = HF₀ × e^((supplyAPR − borrowAPR) × t)
+  // Solving for HF(t) = 1:
+  //   t_years = ln(HF₀) / (borrowAPR − supplyAPR)
+  //
+  // Leverage is already embedded in HF₀ (higher lev → lower HF₀ → fewer days).
+  // The erosion rate is purely the raw APR spread, independent of leverage.
   const liqDaysEl  = $("pos-liq-days");
   const liqNoteEl  = $("pos-liq-note");
-  if (rs && pos.leverage > 0 && isFinite(pos.hf)) {
-    const lev = pos.leverage;
-    // interest-only net APR on equity (no BLND)
-    const interestNetPct = rs.interestSupplyApr * lev - rs.interestBorrowApr * (lev - 1);
-    // HF = collateral × cFactor / debt; as interest accrues, debt grows and HF falls.
-    // Approximate daily HF change by treating APR as continuous growth on debt side:
-    // debt grows at interestBorrowApr/365 per day, collateral grows at interestSupplyApr/365 per day
-    // d(HF)/day ≈ HF × (interestSupplyApr − interestBorrowApr) / 365
-    // simpler linearised: days = (hf − 1.0) / (−interestNetPct/100 / 365 × hf)
-    //   only meaningful if interestNetPct < 0 (net cost on equity)
-    if (interestNetPct >= 0) {
-      liqDaysEl.textContent = "Never (interest positive)";
+  if (rs && pos.leverage > 0 && isFinite(pos.hf) && pos.hf > 1) {
+    const spreadPct = rs.interestBorrowApr - rs.interestSupplyApr; // positive = HF eroding
+    if (spreadPct <= 0) {
+      liqDaysEl.textContent = "Never (supply APR ≥ borrow APR)";
       liqDaysEl.className   = "metric-value hf-ok";
       liqNoteEl.textContent = "";
     } else {
-      // HF erodes at |interestNetPct|% of equity per year, but HF = cFactor × lev / (lev−1)
-      // Rate of HF erosion: each day debt grows, so HF × daily_borrow_rate falls while
-      // supply grows HF × daily_supply_rate. Net daily HF change ≈ HF × netRate / 365
-      const dailyHfDrift = pos.hf * (interestNetPct / 100) / 365; // negative
-      const daysLeft = Math.max(0, (pos.hf - 1.0) / Math.abs(dailyHfDrift));
+      const daysLeft = Math.log(pos.hf) / (spreadPct / 100) * 365;
       liqDaysEl.textContent = daysLeft > 3650 ? ">10 years" : `~${Math.round(daysLeft)} days`;
       liqDaysEl.className   = `metric-value ${daysLeft < 30 ? "hf-bad" : daysLeft < 90 ? "hf-warn" : "hf-ok"}`;
-      liqNoteEl.textContent = `Interest-only net: ${fmt(interestNetPct, 2)}%/yr on equity. Claim BLND to reset runway.`;
+      liqNoteEl.textContent = `Interest spread: ${fmt(spreadPct, 2)}%/yr (borrow − supply). Claim & convert BLND to extend runway.`;
     }
   } else {
     liqDaysEl.textContent = "—";
