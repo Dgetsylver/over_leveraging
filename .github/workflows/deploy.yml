@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, execute-leverage-loop]
+    branches: [main, execute-leverage-loop, ui-redesign-v2]
     paths:
       - "frontend/**"
       - ".github/workflows/deploy.yml"
