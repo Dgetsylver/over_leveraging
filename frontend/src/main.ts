@@ -92,6 +92,21 @@ async function signAndSubmit(xdrStr: string, label: string): Promise<string> {
 
 // ── Asset tabs ────────────────────────────────────────────────────────────────
 
+/** Max loops where hfAt(n, c) >= 1.03. */
+function maxLoopsFor(c: number): number {
+  for (let n = 50; n >= 1; n--) {
+    if (hfAt(n, c) >= 1.03) return n;
+  }
+  return 1;
+}
+
+function updateSliderMax(c: number) {
+  const slider  = $("loops-slider") as HTMLInputElement;
+  const maxL    = maxLoopsFor(c);
+  slider.max    = String(maxL);
+  if (parseInt(slider.value) > maxL) slider.value = String(maxL);
+}
+
 function buildAssetTabs() {
   const container = $("asset-tabs");
   container.innerHTML = "";
@@ -107,15 +122,34 @@ function buildAssetTabs() {
 
 function selectAsset(asset: AssetInfo) {
   selectedAsset = asset;
-  // Update tab active state
   document.querySelectorAll<HTMLButtonElement>(".asset-tab").forEach(btn => {
     btn.classList.toggle("active", btn.dataset["assetId"] === asset.id);
   });
-  // Update input suffix
   ($("asset-symbol-suffix") as HTMLElement).textContent = asset.symbol;
+
+  // Update slider max immediately (use live cFactor from reserves if available)
+  const rs = reserves.find(r => r.asset.id === asset.id);
+  updateSliderMax(rs ? rs.cFactor : asset.cFactor);
+
+  // Render from cache instantly — no full reload on every tab switch
   renderSelectedAsset();
-  // Refresh balance + pending BLND for new asset
-  if (userAddress) loadAll();
+
+  // Only refresh balance + pending BLND (fast, doesn't re-fetch reserves)
+  if (userAddress) refreshTabData();
+}
+
+/** Fetch only balance + pending BLND for the current asset. */
+async function refreshTabData() {
+  if (!userAddress) return;
+  try {
+    const [bal, blnd] = await Promise.all([
+      fetchAssetBalance(userAddress, selectedAsset.id),
+      fetchPendingBlnd(userAddress, selectedAsset),
+    ]);
+    $("asset-balance").textContent = `${fmt(bal, 4)} ${selectedAsset.symbol}`;
+    $("pos-blnd").textContent      = `${fmt(blnd, 4)} BLND`;
+    ($("claim-btn") as HTMLButtonElement).disabled = blnd <= 0;
+  } catch { /* silently ignore */ }
 }
 
 // ── Render reserve stats for selected asset ───────────────────────────────────
@@ -123,6 +157,9 @@ function selectAsset(asset: AssetInfo) {
 function renderSelectedAsset() {
   const rs = reserves.find(r => r.asset.id === selectedAsset.id);
   if (!rs) return;
+
+  // Keep slider max in sync with live cFactor from pool
+  updateSliderMax(rs.cFactor);
 
   // Pool stats bar
   const maxLev = 1 / (1 - rs.cFactor);
@@ -244,12 +281,6 @@ async function loadAll() {
   }
 }
 
-async function refreshBalance() {
-  if (!userAddress) return;
-  const bal = await fetchAssetBalance(userAddress, selectedAsset.id);
-  $("asset-balance").textContent = `${fmt(bal, 4)} ${selectedAsset.symbol}`;
-}
-
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 async function openPosition() {
@@ -349,8 +380,8 @@ $("close-btn").addEventListener("click",      closePosition);
 $("claim-btn").addEventListener("click",      claimBlnd);
 
 ($("loops-slider")  as HTMLInputElement).addEventListener("input",  updatePreview);
-($("initial-input") as HTMLInputElement).addEventListener("input",  () => { refreshBalance(); updatePreview(); });
-($("initial-input") as HTMLInputElement).addEventListener("change", () => { refreshBalance(); updatePreview(); });
+($("initial-input") as HTMLInputElement).addEventListener("input",  () => { refreshTabData(); updatePreview(); });
+($("initial-input") as HTMLInputElement).addEventListener("change", () => { refreshTabData(); updatePreview(); });
 
 // Init preview with defaults
 updatePreview();
