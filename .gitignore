@@ -1,2 +1,10 @@
 /target/
 test_snapshots/
+scripts/node_modules/
+scripts/package-lock.json
+.DS_Store
+src/.DS_Store
+# Never commit private keys
+*.key
+*.secret
+

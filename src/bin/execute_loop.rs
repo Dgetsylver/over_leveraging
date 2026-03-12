@@ -143,14 +143,19 @@ fn fetch_pool_snapshot(client: &Client) -> PoolSnapshot {
 
 // ── Request amount computation ────────────────────────────────────────────────
 
-/// Returns (supply_amount, borrow_amount) for each of the N loops, in USDC stroops.
+/// Returns (supply_amount, borrow_amount) for the leverage loop, in USDC stroops.
 ///
-/// Loop 0: supply initial, borrow initial × c
-/// Loop 1: supply initial × c, borrow initial × c²
+/// Produces n borrows and n+1 supplies. The final extra supply re-deposits the
+/// last borrow proceeds without a matching borrow, ensuring HF > 1.0.
+/// HF = (1 - c^(n+1)) / (c * (1 - c^n)) > 1.0 for any finite n and c < 1.
+///
+/// Loop 0:   supply initial,    borrow initial × c
+/// Loop 1:   supply initial × c, borrow initial × c²
 /// …
-/// Each iteration supplies whatever is currently in the wallet (the prior borrow).
+/// Loop n-1: supply initial × c^(n-1), borrow initial × c^n
+/// Final:    supply initial × c^n  (no borrow)
 fn compute_requests(initial_stroops: i128, c_factor: i128, n_loops: usize) -> Vec<(i128, i128)> {
-    let mut pairs = Vec::with_capacity(n_loops);
+    let mut pairs = Vec::with_capacity(n_loops + 1);
     let mut balance = initial_stroops;
     for _ in 0..n_loops {
         let supply = balance;
@@ -158,27 +163,27 @@ fn compute_requests(initial_stroops: i128, c_factor: i128, n_loops: usize) -> Ve
         pairs.push((supply, borrow));
         balance = borrow;
     }
+    // Final supply-only entry (borrow = 0 signals "supply only")
+    pairs.push((balance, 0));
     pairs
 }
 
 /// Formats a `Vec<Request>` as a JSON array understood by stellar-cli's
 /// argument parser for Blend's `Request` contracttype.
 fn format_requests_json(pairs: &[(i128, i128)], usdc_id: &str) -> String {
-    let items: Vec<String> = pairs
-        .iter()
-        .flat_map(|(supply, borrow)| {
-            [
-                format!(
-                    r#"{{"address":"{}","amount":"{}","request_type":{}}}"#,
-                    usdc_id, supply, SUPPLY_COLLATERAL
-                ),
-                format!(
-                    r#"{{"address":"{}","amount":"{}","request_type":{}}}"#,
-                    usdc_id, borrow, BORROW
-                ),
-            ]
-        })
-        .collect();
+    let mut items: Vec<String> = Vec::new();
+    for (supply, borrow) in pairs {
+        items.push(format!(
+            r#"{{"address":"{}","amount":"{}","request_type":{}}}"#,
+            usdc_id, supply, SUPPLY_COLLATERAL
+        ));
+        if *borrow > 0 {
+            items.push(format!(
+                r#"{{"address":"{}","amount":"{}","request_type":{}}}"#,
+                usdc_id, borrow, BORROW
+            ));
+        }
+    }
     format!("[{}]", items.join(","))
 }
 
@@ -198,17 +203,20 @@ fn print_preflight(pairs: &[(i128, i128)], c_factor: i128, initial_usdc: f64, dr
     println!();
     println!("  Pool:              {POOL_ID}");
     println!("  USDC:              {USDC_ID}");
-    println!("  Loops:             {}  ({} requests in one submit())", pairs.len(), pairs.len() * 2);
+    let n_borrows = pairs.iter().filter(|(_, b)| *b > 0).count();
+    let n_requests = n_borrows + pairs.len(); // supplies + borrows
+    println!("  Loops:             {}  ({} borrows + {} supplies = {} requests)", n_borrows, n_borrows, pairs.len(), n_requests);
     println!("  Initial deposit:   ${initial_usdc:.2}");
     println!("  Collateral factor: {:.0}%", c * 100.0);
     println!();
     println!("  {:>4}  {:>14}  {:>14}", "Loop", "Supply ($)", "Borrow ($)");
     println!("  {}", "─".repeat(36));
     for (i, (s, b)) in pairs.iter().enumerate() {
-        println!("  {:>4}  {:>14.2}  {:>14.2}",
-            i + 1,
-            *s as f64 / scalar_f,
-            *b as f64 / scalar_f);
+        if *b > 0 {
+            println!("  {:>4}  {:>14.2}  {:>14.2}", i + 1, *s as f64 / scalar_f, *b as f64 / scalar_f);
+        } else {
+            println!("  {:>4}  {:>14.2}  {:>14}  (final supply)", i + 1, *s as f64 / scalar_f, "—");
+        }
     }
     println!("  {}", "─".repeat(36));
     println!("  {:>4}  {:>14.2}  {:>14.2}  →  {:.3}× leverage",
