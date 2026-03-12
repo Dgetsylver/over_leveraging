@@ -194,7 +194,7 @@ function renderSelectedAsset() {
 
   updateLeverageSlider(rs.cFactor);
 
-  const maxLev = 1.03 / (1.03 - rs.cFactor);
+  const maxLev = 1.04 / (1.04 - rs.cFactor);
   $("stat-cfactor").textContent    = `${(rs.cFactor * 100).toFixed(0)}%`;
   $("stat-max-lev").textContent    = `${maxLev.toFixed(2)}×`;
   $("stat-liquidity").textContent  = `${fmt(rs.available, 0)} ${rs.asset.symbol}`;
@@ -385,8 +385,8 @@ function updatePreview() {
     liquidityWarnEl.classList.add("hidden");
   }
 
-  const safe = hf >= 1.03 && selectedPool.status === 1 && liquidityOk;
-  ($("hf-warning") as HTMLElement).classList.toggle("hidden", hf >= 1.03 || selectedPool.status !== 1);
+  const safe = hf >= 1.04 && selectedPool.status === 1 && liquidityOk;
+  ($("hf-warning") as HTMLElement).classList.toggle("hidden", hf >= 1.04 || selectedPool.status !== 1);
   ($("open-btn") as HTMLButtonElement).disabled = !safe;
 }
 
@@ -433,7 +433,7 @@ async function openPosition() {
   const rs = reserves.find(r => r.asset.id === selectedAsset.id);
   const liveAsset = rs?.asset ?? selectedAsset;
 
-  if (hfForLeverage(leverage, liveAsset.cFactor) < 1.03) { toast("HF too low — reduce leverage", "error"); return; }
+  if (hfForLeverage(leverage, liveAsset.cFactor) < 1.04) { toast("HF too low — reduce leverage", "error"); return; }
 
   const totalBorrow   = initial * (leverage - 1);
   const firstBorrow   = Math.min(initial * liveAsset.cFactor, totalBorrow);
@@ -454,10 +454,10 @@ async function openPosition() {
   } catch (e: any) {
     // Translate known Blend contract error codes to human-readable messages
     const msg: string = e?.message ?? "Transaction failed";
-    if (msg.includes("#1205") || msg.includes("InvalidUtilRate")) {
-      toast("Pool utilization limit reached — not enough liquidity for this borrow. Reduce leverage or deposit.", "error");
-    } else if (msg.includes("#1200") || msg.includes("InvalidHf")) {
+    if (msg.includes("#1205") || msg.includes("InvalidHf")) {
       toast("Health factor too low — reduce leverage.", "error");
+    } else if (msg.includes("#1207") || msg.includes("InvalidUtilRate")) {
+      toast("Pool utilization limit reached — not enough liquidity for this borrow. Reduce leverage or deposit.", "error");
     } else {
       toast(msg.slice(0, 200), "error");
     }
@@ -594,15 +594,26 @@ $("claim-btn").addEventListener("click",      claimBlnd);
 $("max-btn").addEventListener("click",        maxDeposit);
 
 ($("leverage-slider") as HTMLInputElement).addEventListener("input",  updatePreview);
+// Live preview while typing (no clamping so user can type multi-digit numbers like "10")
 ($("leverage-input")  as HTMLInputElement).addEventListener("input", () => {
   const numIn  = $("leverage-input")  as HTMLInputElement;
   const slider = $("leverage-slider") as HTMLInputElement;
-  let v = parseFloat(numIn.value);
-  if (!isNaN(v)) {
-    v = Math.min(parseFloat(slider.max), Math.max(parseFloat(slider.min), v));
+  const v = parseFloat(numIn.value);
+  if (!isNaN(v) && v >= 1.1) {
     slider.value = v.toFixed(1);
     updatePreview();
   }
+});
+// Clamp on blur / Enter so the final value is within valid range
+($("leverage-input")  as HTMLInputElement).addEventListener("change", () => {
+  const numIn  = $("leverage-input")  as HTMLInputElement;
+  const slider = $("leverage-slider") as HTMLInputElement;
+  let v = parseFloat(numIn.value);
+  if (isNaN(v)) v = 1.1;
+  v = Math.min(parseFloat(slider.max), Math.max(1.1, Math.round(v * 10) / 10));
+  numIn.value  = v.toFixed(1);
+  slider.value = v.toFixed(1);
+  updatePreview();
 });
 ($("initial-input")   as HTMLInputElement).addEventListener("input",  () => { refreshTabData(); updatePreview(); });
 ($("initial-input")   as HTMLInputElement).addEventListener("change", () => { refreshTabData(); updatePreview(); });
