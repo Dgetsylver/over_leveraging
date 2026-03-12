@@ -18,7 +18,7 @@ import {
 
 export const POOL_ID   = "CDMAVJPFXPADND3YRL4BSM3AKZWCTFMX27GLLXCML3PD62HEQS5FPVAI";
 export const ORACLE_ID = "CAVRP26CWW6IUEXBRA3Q2T2SHBUVBC2DF43M4E23LEZGW5ZEIB62HALS";
-export const BLND_ID   = "CD25MNVTZDL4Y3XBCPCJXGC7P7Q4BH5B7CTZSN7YXCEUN56HAQBCM7E";
+export const BLND_ID   = "CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY";
 export const NETWORK   = Networks.PUBLIC;
 export const RPC_URL   = "https://rpc.lightsail.network/";
 
@@ -168,15 +168,35 @@ async function simulate(userAddress: string, op: xdr.Operation): Promise<any> {
 let _blndPriceCache: number | null = null;
 export async function fetchBlndPrice(userAddress: string): Promise<number> {
   if (_blndPriceCache !== null) return _blndPriceCache;
+
+  // 1. Try on-chain oracle (same oracle used for pool assets)
   try {
     const oracle = new Contract(ORACLE_ID);
     const raw = await simulate(userAddress, oracle.call("lastprice", assetScVal(BLND_ID)));
-    _blndPriceCache = raw ? Number(BigInt(raw.price)) / ORACLE_DEC : 0;
-  } catch {
-    _blndPriceCache = 0;
-  }
-  console.log("[blend] BLND price (USD):", _blndPriceCache);
-  return _blndPriceCache!;
+    if (raw) {
+      _blndPriceCache = Number(BigInt(raw.price)) / ORACLE_DEC;
+      console.log("[blend] BLND price from oracle:", _blndPriceCache);
+      return _blndPriceCache;
+    }
+  } catch { /* fall through */ }
+
+  // 2. Fallback: CoinGecko free API
+  try {
+    const res = await fetch(
+      "https://api.coingecko.com/api/v3/simple/price?ids=blend-2&vs_currencies=usd",
+      { signal: AbortSignal.timeout(6000) },
+    );
+    if (res.ok) {
+      const data = await res.json() as any;
+      _blndPriceCache = data["blend-2"]?.usd ?? 0;
+      console.log("[blend] BLND price from CoinGecko:", _blndPriceCache);
+      return _blndPriceCache!;
+    }
+  } catch { /* fall through */ }
+
+  _blndPriceCache = 0;
+  console.warn("[blend] BLND price unavailable — emissions APR will show 0");
+  return 0;
 }
 
 // ── Per-asset pool data ───────────────────────────────────────────────────────
