@@ -150,12 +150,17 @@ function buildRequestsVec(items: xdr.ScVal[]): xdr.ScVal {
 // ── Simulate helper ───────────────────────────────────────────────────────────
 
 async function simulate(userAddress: string, op: xdr.Operation): Promise<any> {
-  const acc = await server.getAccount(userAddress);
-  const tx  = new TransactionBuilder(acc, { fee: BASE_FEE, networkPassphrase: NETWORK })
-    .addOperation(op).setTimeout(30).build();
-  const sim = await server.simulateTransaction(tx);
-  if (!SorobanRpc.Api.isSimulationSuccess(sim)) return null;
-  return scValToNative(sim.result!.retval);
+  try {
+    const acc = await server.getAccount(userAddress);
+    const tx  = new TransactionBuilder(acc, { fee: BASE_FEE, networkPassphrase: NETWORK })
+      .addOperation(op).setTimeout(30).build();
+    const sim = await server.simulateTransaction(tx);
+    if (!SorobanRpc.Api.isSimulationSuccess(sim)) return null;
+    return scValToNative(sim.result!.retval);
+  } catch (e) {
+    console.warn("simulate() failed:", e);
+    return null;
+  }
 }
 
 // ── BLND price from CoinGecko ─────────────────────────────────────────────────
@@ -164,13 +169,15 @@ let _blndPriceCache: number | null = null;
 export async function fetchBlndPrice(): Promise<number> {
   if (_blndPriceCache !== null) return _blndPriceCache;
   try {
-    const res  = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=blend-2&vs_currencies=usd");
+    // Try CoinGecko free API; may be blocked by CORS on some hosts
+    const res  = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=blend-2&vs_currencies=usd", { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json() as any;
     _blndPriceCache = data["blend-2"]?.usd ?? 0;
-    return _blndPriceCache;
   } catch {
-    return 0;
+    _blndPriceCache = 0;
   }
+  return _blndPriceCache!;
 }
 
 // ── Per-asset pool data ───────────────────────────────────────────────────────
@@ -201,22 +208,20 @@ export async function fetchAllReserves(userAddress: string): Promise<ReserveStat
 
   return Promise.all(
     ASSETS.map(async (asset): Promise<ReserveStats> => {
-      // Reserve data
-      const reserveRaw = await simulate(userAddress,
-        pool.call("get_reserve", new Address(asset.id).toScVal())
-      );
-      // Oracle price (USD, 14 decimals)
-      const priceRaw = await simulate(userAddress,
-        oracle.call("lastprice", assetScVal(asset.id))
-      );
-      // Supply emissions
-      const supplyEmissions = await simulate(userAddress,
-        pool.call("get_reserve_emissions", nativeToScVal(asset.supplyTokenId, { type: "u32" }))
-      );
-      // Borrow emissions
-      const borrowEmissions = await simulate(userAddress,
-        pool.call("get_reserve_emissions", nativeToScVal(asset.borrowTokenId, { type: "u32" }))
-      );
+      let reserveRaw: any = null;
+      let priceRaw: any   = null;
+      let supplyEmissions: any = null;
+      let borrowEmissions: any = null;
+      try {
+        [reserveRaw, priceRaw, supplyEmissions, borrowEmissions] = await Promise.all([
+          simulate(userAddress, pool.call("get_reserve", new Address(asset.id).toScVal())),
+          simulate(userAddress, oracle.call("lastprice", assetScVal(asset.id))),
+          simulate(userAddress, pool.call("get_reserve_emissions", nativeToScVal(asset.supplyTokenId, { type: "u32" }))),
+          simulate(userAddress, pool.call("get_reserve_emissions", nativeToScVal(asset.borrowTokenId, { type: "u32" }))),
+        ]);
+      } catch (e) {
+        console.warn(`fetchAllReserves: error fetching ${asset.symbol}:`, e);
+      }
 
       const priceUsd = priceRaw ? Number(BigInt(priceRaw.price)) / ORACLE_DEC : 0;
 

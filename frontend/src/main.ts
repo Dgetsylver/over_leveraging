@@ -238,8 +238,9 @@ async function loadAll() {
 
     renderSelectedAsset();
   } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
     console.error("Failed to load pool data:", e);
-    toast("Failed to load pool data", "error");
+    toast(`Load failed: ${msg.slice(0, 120)}`, "error");
   }
 }
 
