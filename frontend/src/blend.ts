@@ -238,24 +238,44 @@ export async function fetchAllReserves(userAddress: string): Promise<ReserveStat
       const available    = Math.max(0, totalSupply * maxUtilActual - totalBorrow);
       const cFactor      = reserveRaw ? reserveRaw.config.c_factor / SCALAR_F : asset.cFactor;
 
-      // Interest APR from rate model
-      const util     = totalSupply > 0 ? totalBorrow / totalSupply : 0;
-      const rBase    = reserveRaw ? reserveRaw.config.r_base / SCALAR_F : 0.01;
-      const rOne     = reserveRaw ? reserveRaw.config.r_one  / SCALAR_F : 0.05;
-      const rTwo     = reserveRaw ? reserveRaw.config.r_two  / SCALAR_F : 0.10;
-      const utilOpt  = reserveRaw ? reserveRaw.config.util   / SCALAR_F : 0.50;
-      const rThree   = reserveRaw ? reserveRaw.config.r_three / SCALAR_F : 5.0;
-      const backstopRate = 0.10; // 10% backstop take rate approximation
+      // ── Blend v2 exact interest rate formula (from blend-sdk-js) ────────────
+      const util = totalSupply > 0 ? totalBorrow / totalSupply : 0;
 
-      let interestBorrowApr: number;
-      if (util <= utilOpt) {
-        interestBorrowApr = (rBase + rOne * (util / utilOpt)) * 100;
+      // Raw fixed-point config values (all in 1e7 scale)
+      const rBase_fp   = reserveRaw?.config.r_base   ?? 300_000;
+      const rOne_fp    = reserveRaw?.config.r_one    ?? 400_000;
+      const rTwo_fp    = reserveRaw?.config.r_two    ?? 1_200_000;
+      const rThree_fp  = reserveRaw?.config.r_three  ?? 50_000_000;
+      const utilOpt_fp = reserveRaw?.config.util     ?? 5_000_000;
+      // ir_mod may be returned as BigInt (i128) or number (u32)
+      const irMod_fp   = reserveRaw ? Number(BigInt(reserveRaw.data.ir_mod)) : 1_000_000;
+
+      const curUtil_fp = Math.round(util * SCALAR_F);
+      const FIXED_95PCT = 9_500_000;
+      const BACKSTOP_FP = 2_000_000; // 20% backstop take rate (Etherfuse pool)
+
+      let baseRate_fp: number;
+      if (curUtil_fp <= utilOpt_fp) {
+        // Branch 1: below or at target utilisation
+        baseRate_fp = rBase_fp + Math.ceil(rOne_fp * curUtil_fp / utilOpt_fp);
+      } else if (curUtil_fp <= FIXED_95PCT) {
+        // Branch 2: target < util ≤ 95%
+        const slope = Math.ceil((curUtil_fp - utilOpt_fp) * SCALAR_F / (FIXED_95PCT - utilOpt_fp));
+        baseRate_fp = rBase_fp + rOne_fp + Math.ceil(rTwo_fp * slope / SCALAR_F);
       } else {
-        const excess = (util - utilOpt) / (1 - utilOpt);
-        interestBorrowApr = (rBase + rOne + (rTwo - rOne) * excess + rThree * Math.max(0, excess - 1)) * 100;
+        // Branch 3: util > 95% — steep r_three slope
+        const slope = Math.ceil((curUtil_fp - FIXED_95PCT) * SCALAR_F / (SCALAR_F - FIXED_95PCT));
+        baseRate_fp = rBase_fp + rOne_fp + rTwo_fp + Math.ceil(rThree_fp * slope / SCALAR_F);
       }
-      // Supply APR ≈ borrow APR × utilization × (1 - backstop_take)
-      const interestSupplyApr = interestBorrowApr * util * (1 - backstopRate);
+
+      // Apply ir_mod (reactive modifier; neutral = 1e7, reduced = <1e7)
+      const curIr_fp = Math.ceil(baseRate_fp * irMod_fp / SCALAR_F);
+
+      const interestBorrowApr = (curIr_fp / SCALAR_F) * 100;
+
+      // Supply APR = borrow_ir × (1 - backstop) × util  (all in fixed-point)
+      const supplyCapture_fp  = Math.floor((SCALAR_F - BACKSTOP_FP) * curUtil_fp / SCALAR_F);
+      const interestSupplyApr = (Math.floor(curIr_fp * supplyCapture_fp / SCALAR_F) / SCALAR_F) * 100;
 
       // BLND emissions APR
       const supplyEps = supplyEmissions?.eps != null ? BigInt(supplyEmissions.eps) : 0n;
