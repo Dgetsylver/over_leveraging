@@ -307,8 +307,19 @@ function updatePreview() {
     $("prev-net-apr").className   = `prev-net-apr ${netApr > 0 ? "apr-great" : "apr-bad"}`;
   }
 
-  const safe = hf >= 1.03 && selectedPool.status === 1;
-  ($("hf-warning") as HTMLElement).classList.toggle("hidden", safe || selectedPool.status !== 1);
+  // Liquidity check: total borrow must fit within available pool liquidity
+  const totalBorrow = initial * (lev - 1);
+  const liquidityOk = !rs || totalBorrow <= rs.available;
+  const liquidityWarnEl = $("liquidity-warning") as HTMLElement;
+  if (!liquidityOk && rs) {
+    liquidityWarnEl.textContent = `⚠ Borrow (${fmt(totalBorrow, 0)}) exceeds pool available (${fmt(rs.available, 0)} ${rs.asset.symbol}). Reduce leverage or deposit.`;
+    liquidityWarnEl.classList.remove("hidden");
+  } else {
+    liquidityWarnEl.classList.add("hidden");
+  }
+
+  const safe = hf >= 1.03 && selectedPool.status === 1 && liquidityOk;
+  ($("hf-warning") as HTMLElement).classList.toggle("hidden", hf >= 1.03 || selectedPool.status !== 1);
   ($("open-btn") as HTMLButtonElement).disabled = !safe;
 }
 
@@ -350,18 +361,37 @@ async function openPosition() {
   const initial  = parseFloat(($("initial-input") as HTMLInputElement).value);
   const leverage = parseFloat(($("leverage-slider") as HTMLInputElement).value);
   if (isNaN(initial) || initial <= 0) { toast("Enter a valid amount", "error"); return; }
-  if (hfForLeverage(leverage, selectedAsset.cFactor) < 1.03) { toast("HF too low — reduce leverage", "error"); return; }
+
+  // Use live cFactor from reserves so intermediate borrow steps don't exceed pool limits
+  const rs = reserves.find(r => r.asset.id === selectedAsset.id);
+  const liveAsset = rs?.asset ?? selectedAsset;
+
+  if (hfForLeverage(leverage, liveAsset.cFactor) < 1.03) { toast("HF too low — reduce leverage", "error"); return; }
+
+  const totalBorrow = initial * (leverage - 1);
+  if (rs && totalBorrow > rs.available) {
+    toast(`Borrow (${fmt(totalBorrow, 0)}) exceeds pool available liquidity (${fmt(rs.available, 0)} ${rs.asset.symbol})`, "error");
+    return;
+  }
 
   const initialStroops = BigInt(Math.round(initial * 1e7));
   setLoading($("open-btn") as HTMLButtonElement, true);
   try {
-    const approveXdr = await buildApproveXdr(selectedPool, userAddress, selectedAsset.id, initialStroops + 1n);
-    await signAndSubmit(approveXdr, `Approve ${selectedAsset.symbol}`);
-    const submitXdr = await buildOpenPositionXdr(selectedPool, userAddress, selectedAsset, initialStroops, leverage);
-    await signAndSubmit(submitXdr, `Open ${selectedAsset.symbol} leverage`);
+    const approveXdr = await buildApproveXdr(selectedPool, userAddress, liveAsset.id, initialStroops + 1n);
+    await signAndSubmit(approveXdr, `Approve ${liveAsset.symbol}`);
+    const submitXdr = await buildOpenPositionXdr(selectedPool, userAddress, liveAsset, initialStroops, leverage);
+    await signAndSubmit(submitXdr, `Open ${liveAsset.symbol} leverage`);
     await loadAll();
   } catch (e: any) {
-    toast(e?.message ?? "Transaction failed", "error");
+    // Translate known Blend contract error codes to human-readable messages
+    const msg: string = e?.message ?? "Transaction failed";
+    if (msg.includes("#1205") || msg.includes("InvalidUtilRate")) {
+      toast("Pool utilization limit reached — not enough liquidity for this borrow. Reduce leverage or deposit.", "error");
+    } else if (msg.includes("#1200") || msg.includes("InvalidHf")) {
+      toast("Health factor too low — reduce leverage.", "error");
+    } else {
+      toast(msg.slice(0, 200), "error");
+    }
   } finally {
     setLoading($("open-btn") as HTMLButtonElement, false);
   }
