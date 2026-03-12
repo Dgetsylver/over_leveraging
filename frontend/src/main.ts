@@ -1,5 +1,5 @@
 /**
- * Blend CETES/USTRY/USDC/TESOURO/XLM Leverage UI
+ * Blend Leverage UI — multi-pool support (Etherfuse, Fixed, YieldBlox)
  */
 
 import { StellarWalletsKit } from "@creit-tech/stellar-wallets-kit/sdk";
@@ -11,7 +11,8 @@ import { HanaModule }        from "@creit-tech/stellar-wallets-kit/modules/hana"
 import { Networks }          from "@creit-tech/stellar-wallets-kit/types";
 
 import {
-  ASSETS,
+  KNOWN_POOLS,
+  getPoolAssets,
   NETWORK,
   fetchAllReserves,
   fetchUserPositions,
@@ -25,6 +26,7 @@ import {
   leverageAt,
   hfAt,
   type AssetInfo,
+  type PoolDef,
   type ReserveStats,
   type AssetPosition,
   type UserPositions,
@@ -48,7 +50,9 @@ StellarWalletsKit.init({
 let userAddress: string | null = null;
 let reserves:    ReserveStats[]  = [];
 let positions:   UserPositions   = { byAsset: new Map() };
-let selectedAsset: AssetInfo     = ASSETS[2]; // default: CETES
+let selectedPool: PoolDef        = KNOWN_POOLS[0]; // default: Etherfuse
+let assets: AssetInfo[]          = getPoolAssets(selectedPool);
+let selectedAsset: AssetInfo     = assets[2]; // default: CETES (index 2 in Etherfuse)
 
 // ── DOM helpers ───────────────────────────────────────────────────────────────
 
@@ -90,6 +94,51 @@ async function signAndSubmit(xdrStr: string, label: string): Promise<string> {
   return hash;
 }
 
+// ── Pool tabs ─────────────────────────────────────────────────────────────────
+
+function buildPoolTabs() {
+  const container = $("pool-tabs");
+  container.innerHTML = "";
+  KNOWN_POOLS.forEach(pool => {
+    const btn = document.createElement("button");
+    const isFrozen = pool.status !== 1;
+    btn.className = `pool-tab ${pool.id === selectedPool.id ? "active" : ""} ${isFrozen ? "pool-tab-frozen" : ""}`;
+    btn.dataset["poolId"] = pool.id;
+    btn.textContent = pool.name;
+    if (isFrozen) btn.title = "Admin Frozen — exploited Feb 2026";
+    btn.addEventListener("click", () => selectPool(pool));
+    container.appendChild(btn);
+  });
+}
+
+function selectPool(pool: PoolDef) {
+  selectedPool = pool;
+
+  // Update pool tab active states
+  document.querySelectorAll<HTMLButtonElement>(".pool-tab").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset["poolId"] === pool.id);
+  });
+
+  // Show/hide frozen warning banner
+  const banner = $("pool-frozen-banner");
+  if (pool.status !== 1) {
+    banner.classList.remove("hidden");
+    ($("open-btn") as HTMLButtonElement).disabled = true;
+  } else {
+    banner.classList.add("hidden");
+  }
+
+  // Rebuild assets for new pool
+  assets = getPoolAssets(pool);
+  selectedAsset = assets[0];
+
+  buildAssetTabs();
+  ($("asset-symbol-suffix") as HTMLElement).textContent = selectedAsset.symbol;
+  updateSliderMax(selectedAsset.cFactor);
+
+  if (userAddress) loadAll();
+}
+
 // ── Asset tabs ────────────────────────────────────────────────────────────────
 
 /** Max loops where hfAt(n, c) >= 1.03. */
@@ -97,7 +146,7 @@ function maxLoopsFor(c: number): number {
   for (let n = 50; n >= 1; n--) {
     if (hfAt(n, c) >= 1.03) return n;
   }
-  return 1;
+  return 0;
 }
 
 function updateSliderMax(c: number) {
@@ -110,7 +159,7 @@ function updateSliderMax(c: number) {
 function buildAssetTabs() {
   const container = $("asset-tabs");
   container.innerHTML = "";
-  ASSETS.forEach(asset => {
+  assets.forEach(asset => {
     const btn = document.createElement("button");
     btn.className = `asset-tab ${asset.id === selectedAsset.id ? "active" : ""}`;
     btn.dataset["assetId"] = asset.id;
@@ -144,7 +193,7 @@ async function refreshTabData() {
   try {
     const [bal, blnd] = await Promise.all([
       fetchAssetBalance(userAddress, selectedAsset.id),
-      fetchPendingBlnd(userAddress, selectedAsset),
+      fetchPendingBlnd(selectedPool, userAddress, selectedAsset),
     ]);
     $("asset-balance").textContent = `${fmt(bal, 4)} ${selectedAsset.symbol}`;
     $("pos-blnd").textContent      = `${fmt(blnd, 4)} BLND`;
@@ -251,8 +300,8 @@ function updatePreview() {
     $("prev-net-apr").className   = `prev-net-apr ${netApr > 0 ? "apr-great" : "apr-bad"}`;
   }
 
-  const safe = hf >= 1.03;
-  ($("hf-warning") as HTMLElement).classList.toggle("hidden", safe);
+  const safe = hf >= 1.03 && selectedPool.status === 1;
+  ($("hf-warning") as HTMLElement).classList.toggle("hidden", safe || selectedPool.status !== 1);
   ($("open-btn") as HTMLButtonElement).disabled = !safe;
 }
 
@@ -261,15 +310,15 @@ function updatePreview() {
 async function loadAll() {
   if (!userAddress) return;
   try {
-    reserves  = await fetchAllReserves(userAddress);
-    positions = await fetchUserPositions(userAddress, reserves);
+    reserves  = await fetchAllReserves(selectedPool, userAddress);
+    positions = await fetchUserPositions(selectedPool, userAddress, reserves);
 
     // Update balance
     const bal = await fetchAssetBalance(userAddress, selectedAsset.id);
     $("asset-balance").textContent = `${fmt(bal, 4)} ${selectedAsset.symbol}`;
 
     // Update pending BLND for selected asset
-    const blnd = await fetchPendingBlnd(userAddress, selectedAsset);
+    const blnd = await fetchPendingBlnd(selectedPool, userAddress, selectedAsset);
     $("pos-blnd").textContent    = `${fmt(blnd, 4)} BLND`;
     ($("claim-btn") as HTMLButtonElement).disabled = blnd <= 0;
 
@@ -285,6 +334,7 @@ async function loadAll() {
 
 async function openPosition() {
   if (!userAddress) return;
+  if (selectedPool.status !== 1) { toast("Pool is frozen — cannot open new positions", "error"); return; }
   const initial = parseFloat(($("initial-input") as HTMLInputElement).value);
   const loops   = parseInt(($("loops-slider") as HTMLInputElement).value);
   if (isNaN(initial) || initial <= 0) { toast("Enter a valid amount", "error"); return; }
@@ -293,9 +343,9 @@ async function openPosition() {
   const initialStroops = BigInt(Math.round(initial * 1e7));
   setLoading($("open-btn") as HTMLButtonElement, true);
   try {
-    const approveXdr = await buildApproveXdr(userAddress, selectedAsset.id, initialStroops + 1n);
+    const approveXdr = await buildApproveXdr(selectedPool, userAddress, selectedAsset.id, initialStroops + 1n);
     await signAndSubmit(approveXdr, `Approve ${selectedAsset.symbol}`);
-    const submitXdr = await buildOpenPositionXdr(userAddress, selectedAsset, initialStroops, loops);
+    const submitXdr = await buildOpenPositionXdr(selectedPool, userAddress, selectedAsset, initialStroops, loops);
     await signAndSubmit(submitXdr, `Open ${selectedAsset.symbol} leverage`);
     await loadAll();
   } catch (e: any) {
@@ -311,7 +361,7 @@ async function closePosition() {
   if (!pos) return;
   setLoading($("close-btn") as HTMLButtonElement, true);
   try {
-    const { approveXdr, submitXdr } = await buildClosePositionXdr(userAddress, pos);
+    const { approveXdr, submitXdr } = await buildClosePositionXdr(selectedPool, userAddress, pos);
     await signAndSubmit(approveXdr, `Approve ${selectedAsset.symbol} (close buffer)`);
     await signAndSubmit(submitXdr, `Close ${selectedAsset.symbol} position`);
     await loadAll();
@@ -326,7 +376,7 @@ async function claimBlnd() {
   if (!userAddress) return;
   setLoading($("claim-btn") as HTMLButtonElement, true);
   try {
-    const claimXdr = await buildClaimXdr(userAddress, selectedAsset);
+    const claimXdr = await buildClaimXdr(selectedPool, userAddress, selectedAsset);
     await signAndSubmit(claimXdr, "Claim BLND");
     await loadAll();
   } catch (e: any) {
@@ -352,6 +402,7 @@ async function connect() {
     $("wallet-connected").classList.remove("hidden");
     $("connect-prompt").classList.add("hidden");
     $("dashboard").classList.remove("hidden");
+    buildPoolTabs();
     buildAssetTabs();
     await loadAll();
   } catch (e: any) {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Blend Leverage · Etherfuse Pool</title>
+  <title>Blend Leverage</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -20,8 +20,8 @@
           <span class="logo-text">Blend Leverage</span>
         </div>
         <div class="pool-badge">
-          <span class="badge-label">Pool</span>
-          <span class="badge-value">Etherfuse · Mainnet</span>
+          <span class="badge-label">Protocol</span>
+          <span class="badge-value">Blend · Mainnet</span>
         </div>
       </div>
       <div id="wallet-area">
@@ -42,12 +42,20 @@
       <div id="connect-prompt" class="connect-prompt">
         <div class="connect-prompt-icon">⬡</div>
         <h2>Connect your wallet</h2>
-        <p>Connect a Stellar wallet to manage leverage positions on Blend Protocol's Etherfuse pool.</p>
+        <p>Connect a Stellar wallet to manage leverage positions on Blend Protocol pools.</p>
         <button class="btn btn-primary btn-lg" onclick="document.getElementById('connect-btn').click()">Connect Wallet</button>
       </div>
 
       <!-- Dashboard -->
       <div id="dashboard" class="hidden">
+
+        <!-- Pool tabs -->
+        <div class="pool-tabs-wrap">
+          <div id="pool-tabs" class="pool-tabs"></div>
+        </div>
+        <div id="pool-frozen-banner" class="pool-frozen-banner hidden">
+          ⚠ This pool is Admin Frozen following the February 2026 oracle exploit. No new positions can be opened.
+        </div>
 
         <!-- Asset tabs -->
         <div class="asset-tabs-wrap">

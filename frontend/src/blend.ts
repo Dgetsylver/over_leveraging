@@ -1,5 +1,5 @@
 /**
- * Blend pool interactions — all 5 assets on the Etherfuse mainnet pool.
+ * Blend pool interactions — supports multiple pools (Etherfuse, Fixed, YieldBlox).
  */
 
 import {
@@ -16,14 +16,10 @@ import {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-export const POOL_ID   = "CDMAVJPFXPADND3YRL4BSM3AKZWCTFMX27GLLXCML3PD62HEQS5FPVAI";
-export const ORACLE_ID = "CAVRP26CWW6IUEXBRA3Q2T2SHBUVBC2DF43M4E23LEZGW5ZEIB62HALS";
 export const BLND_ID   = "CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY";
 export const NETWORK   = Networks.PUBLIC;
 export const RPC_URL   = "https://rpc.lightsail.network/";
 
-// Oracle: base=USD, decimals=14 → price = raw / 1e14
-const ORACLE_DEC = 1e14;
 // Token rate scale (b_rate / d_rate): 12 decimal places
 const RATE_DEC   = 1_000_000_000_000n;
 const SCALAR     = 10_000_000n;
@@ -34,6 +30,107 @@ export const SUPPLY_COLLATERAL  = 2;
 export const WITHDRAW_COLLATERAL = 3;
 export const REPAY  = 5;
 export const BORROW = 4;
+
+// ── Pool definitions ──────────────────────────────────────────────────────────
+
+export interface PoolDef {
+  id:         string;   // pool contract address
+  name:       string;   // display name
+  oracleId:   string;   // oracle contract address
+  oracleDec:  number;   // oracle price divisor (e.g. 1e14 or 1e7)
+  backstopFP: number;   // backstop take rate in 1e7 fixed point (e.g. 2_000_000 = 20%)
+  status:     number;   // 1 = active, 4 = admin frozen
+  assetIds:   string[]; // asset contract IDs in reserve order
+}
+
+export const KNOWN_POOLS: PoolDef[] = [
+  {
+    id:        "CDMAVJPFXPADND3YRL4BSM3AKZWCTFMX27GLLXCML3PD62HEQS5FPVAI",
+    name:      "Etherfuse",
+    oracleId:  "CAVRP26CWW6IUEXBRA3Q2T2SHBUVBC2DF43M4E23LEZGW5ZEIB62HALS",
+    oracleDec: 1e14,
+    backstopFP: 2_000_000,
+    status:    1,
+    assetIds: [
+      "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA", // XLM
+      "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75", // USDC
+      "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV", // CETES
+      "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR", // USTRY
+      "CD6M4R2322BYCY2LNWM74PEBQAQ63SA3DUJLI3L4225U4ZVCLMSCBCIS", // TESOURO
+    ],
+  },
+  {
+    id:        "CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD",
+    name:      "Fixed",
+    oracleId:  "CCVTVW2CVA7JLH4ROQGP3CU4T3EXVCK66AZGSM4MUQPXAI4QHCZPOATS",
+    oracleDec: 1e7,
+    backstopFP: 2_000_000,
+    status:    1,
+    assetIds: [
+      "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA", // XLM
+      "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75", // USDC
+      "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV", // EURC
+    ],
+  },
+  {
+    id:        "CCCCIQSDILITHMM7PBSLVDT5MISSY7R26MNZXCX4H7J5JQ5FPIYOGYFS",
+    name:      "YieldBlox",
+    oracleId:  "CD74A3C54EKUVEGUC6WNTUPOTHB624WFKXN3IYTFJGX3EHXDXHCYMXXR",
+    oracleDec: 1e7,
+    backstopFP: 2_000_000,
+    status:    4, // Admin Frozen
+    assetIds: [
+      "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA", // XLM
+      "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75", // USDC
+      "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV", // EURC
+      "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK", // AQUA
+      "CB226ZOEYXTBPD3QEGABTJYSKZVBP2PASEISLG3SBMTN5CE4QZUVZ3CE", // USDGLO
+      "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR", // USTRY
+      "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV", // CETES
+      "CCCRWH6Q3FNP3I2I57BDLM5AFAT7O6OF6GKQOC6SSJNDAVRZ57SPHGU2", // PYUSD
+    ],
+  },
+];
+
+// ── Asset metadata registry ───────────────────────────────────────────────────
+
+interface AssetMeta {
+  symbol:   string;
+  name:     string;
+  decimals: number;
+  cFactor:  number; // default collateral factor
+  maxUtil:  number; // default max utilisation
+}
+
+const ASSET_METADATA: Record<string, AssetMeta> = {
+  "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA": {
+    symbol: "XLM", name: "Stellar Lumens",   decimals: 7, cFactor: 0.75, maxUtil: 0.70,
+  },
+  "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75": {
+    symbol: "USDC", name: "USD Coin",          decimals: 7, cFactor: 0.95, maxUtil: 0.95,
+  },
+  "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV": {
+    symbol: "CETES", name: "CETES",             decimals: 7, cFactor: 0.80, maxUtil: 0.90,
+  },
+  "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR": {
+    symbol: "USTRY", name: "US Treasury",       decimals: 7, cFactor: 0.90, maxUtil: 0.90,
+  },
+  "CD6M4R2322BYCY2LNWM74PEBQAQ63SA3DUJLI3L4225U4ZVCLMSCBCIS": {
+    symbol: "TESOURO", name: "Brazilian Treasury", decimals: 7, cFactor: 0.80, maxUtil: 0.90,
+  },
+  "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV": {
+    symbol: "EURC", name: "Euro Coin",           decimals: 7, cFactor: 0.90, maxUtil: 0.90,
+  },
+  "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK": {
+    symbol: "AQUA", name: "Aquarius",            decimals: 7, cFactor: 0.00, maxUtil: 0.80,
+  },
+  "CB226ZOEYXTBPD3QEGABTJYSKZVBP2PASEISLG3SBMTN5CE4QZUVZ3CE": {
+    symbol: "USDGLO", name: "Global Dollar",     decimals: 7, cFactor: 0.90, maxUtil: 0.90,
+  },
+  "CCCRWH6Q3FNP3I2I57BDLM5AFAT7O6OF6GKQOC6SSJNDAVRZ57SPHGU2": {
+    symbol: "PYUSD", name: "PayPal USD",          decimals: 7, cFactor: 0.90, maxUtil: 0.90,
+  },
+};
 
 // ── Asset registry ────────────────────────────────────────────────────────────
 
@@ -49,66 +146,24 @@ export interface AssetInfo {
   maxUtil:      number;   // 0..1
 }
 
-export const ASSETS: AssetInfo[] = [
-  {
-    id:           "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
-    symbol:       "XLM",
-    name:         "Stellar Lumens",
-    decimals:     7,
-    reserveIndex: 0,
-    supplyTokenId: 1,
-    borrowTokenId: 0,
-    cFactor:      0.75,
-    maxUtil:      0.70,
-  },
-  {
-    id:           "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
-    symbol:       "USDC",
-    name:         "USD Coin",
-    decimals:     7,
-    reserveIndex: 1,
-    supplyTokenId: 3,
-    borrowTokenId: 2,
-    cFactor:      0.95,
-    maxUtil:      0.95,
-  },
-  {
-    id:           "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV",
-    symbol:       "CETES",
-    name:         "CETES",
-    decimals:     7,
-    reserveIndex: 2,
-    supplyTokenId: 5,
-    borrowTokenId: 4,
-    cFactor:      0.80,
-    maxUtil:      0.90,
-  },
-  {
-    id:           "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR",
-    symbol:       "USTRY",
-    name:         "US Treasury",
-    decimals:     7,
-    reserveIndex: 3,
-    supplyTokenId: 7,
-    borrowTokenId: 6,
-    cFactor:      0.90,
-    maxUtil:      0.90,
-  },
-  {
-    id:           "CD6M4R2322BYCY2LNWM74PEBQAQ63SA3DUJLI3L4225U4ZVCLMSCBCIS",
-    symbol:       "TESOURO",
-    name:         "Brazilian Treasury",
-    decimals:     7,
-    reserveIndex: 4,
-    supplyTokenId: 9,
-    borrowTokenId: 8,
-    cFactor:      0.80,
-    maxUtil:      0.90,
-  },
-];
-
-export const assetBySymbol = (sym: string) => ASSETS.find(a => a.symbol === sym)!;
-export const assetById     = (id: string)  => ASSETS.find(a => a.id === id)!;
+/** Build the AssetInfo array for a given pool from ASSET_METADATA. */
+export function getPoolAssets(pool: PoolDef): AssetInfo[] {
+  return pool.assetIds.map((id, idx) => {
+    const meta = ASSET_METADATA[id];
+    if (!meta) throw new Error(`Unknown asset id: ${id}`);
+    return {
+      id,
+      symbol:        meta.symbol,
+      name:          meta.name,
+      decimals:      meta.decimals,
+      reserveIndex:  idx,
+      supplyTokenId: idx * 2 + 1,
+      borrowTokenId: idx * 2,
+      cFactor:       meta.cFactor,
+      maxUtil:       meta.maxUtil,
+    };
+  });
+}
 
 // ── RPC ───────────────────────────────────────────────────────────────────────
 
@@ -166,21 +221,15 @@ async function simulate(userAddress: string, op: xdr.Operation): Promise<any> {
 // ── BLND price from CoinGecko ─────────────────────────────────────────────────
 
 let _blndPriceCache: number | null = null;
-export async function fetchBlndPrice(userAddress: string): Promise<number> {
+
+/**
+ * Fetch BLND price. Goes straight to CoinGecko since no pool oracle lists BLND.
+ * The pool parameter is accepted for API consistency but currently unused.
+ */
+export async function fetchBlndPrice(pool: PoolDef, userAddress: string): Promise<number> {
   if (_blndPriceCache !== null) return _blndPriceCache;
 
-  // 1. Try on-chain oracle (same oracle used for pool assets)
-  try {
-    const oracle = new Contract(ORACLE_ID);
-    const raw = await simulate(userAddress, oracle.call("lastprice", assetScVal(BLND_ID)));
-    if (raw) {
-      _blndPriceCache = Number(BigInt(raw.price)) / ORACLE_DEC;
-      console.log("[blend] BLND price from oracle:", _blndPriceCache);
-      return _blndPriceCache;
-    }
-  } catch { /* fall through */ }
-
-  // 2. Fallback: CoinGecko free API
+  // CoinGecko free API
   try {
     const res = await fetch(
       "https://api.coingecko.com/api/v3/simple/price?ids=blend&vs_currencies=usd",
@@ -220,33 +269,34 @@ export interface ReserveStats {
   borrowEps:         bigint;
 }
 
-export async function fetchAllReserves(userAddress: string): Promise<ReserveStats[]> {
-  const pool      = new Contract(POOL_ID);
-  const oracle    = new Contract(ORACLE_ID);
-  const blndPrice = await fetchBlndPrice(userAddress);
+export async function fetchAllReserves(pool: PoolDef, userAddress: string): Promise<ReserveStats[]> {
+  const poolContract = new Contract(pool.id);
+  const oracle       = new Contract(pool.oracleId);
+  const blndPrice    = await fetchBlndPrice(pool, userAddress);
+  const assets       = getPoolAssets(pool);
 
   return Promise.all(
-    ASSETS.map(async (asset): Promise<ReserveStats> => {
+    assets.map(async (asset): Promise<ReserveStats> => {
       let reserveRaw: any = null;
       let priceRaw: any   = null;
       let supplyEmissions: any = null;
       let borrowEmissions: any = null;
       try {
         [reserveRaw, priceRaw, supplyEmissions, borrowEmissions] = await Promise.all([
-          simulate(userAddress, pool.call("get_reserve", new Address(asset.id).toScVal())),
+          simulate(userAddress, poolContract.call("get_reserve", new Address(asset.id).toScVal())),
           simulate(userAddress, oracle.call("lastprice", assetScVal(asset.id))),
-          simulate(userAddress, pool.call("get_reserve_emissions", nativeToScVal(asset.supplyTokenId, { type: "u32" }))),
-          simulate(userAddress, pool.call("get_reserve_emissions", nativeToScVal(asset.borrowTokenId, { type: "u32" }))),
+          simulate(userAddress, poolContract.call("get_reserve_emissions", nativeToScVal(asset.supplyTokenId, { type: "u32" }))),
+          simulate(userAddress, poolContract.call("get_reserve_emissions", nativeToScVal(asset.borrowTokenId, { type: "u32" }))),
         ]);
       } catch (e) {
         console.warn(`fetchAllReserves: error fetching ${asset.symbol}:`, e);
       }
 
-      const priceUsd = priceRaw ? Number(BigInt(priceRaw.price)) / ORACLE_DEC : 0;
+      const priceUsd = priceRaw ? Number(BigInt(priceRaw.price)) / pool.oracleDec : 0;
 
       // Debug: log raw contract data so we can verify field names / values
-      console.log(`[blend] ${asset.symbol} reserveRaw:`, JSON.stringify(reserveRaw, (_k, v) => typeof v === "bigint" ? v.toString() : v, 2));
-      console.log(`[blend] ${asset.symbol} priceUsd=${priceUsd}, supplyEmissions:`, supplyEmissions, "borrowEmissions:", borrowEmissions);
+      console.log(`[blend:${pool.name}] ${asset.symbol} reserveRaw:`, JSON.stringify(reserveRaw, (_k, v) => typeof v === "bigint" ? v.toString() : v, 2));
+      console.log(`[blend:${pool.name}] ${asset.symbol} priceUsd=${priceUsd}, supplyEmissions:`, supplyEmissions, "borrowEmissions:", borrowEmissions);
 
       const bRate    = reserveRaw ? BigInt(reserveRaw.data.b_rate) : RATE_DEC;
       const dRate    = reserveRaw ? BigInt(reserveRaw.data.d_rate) : RATE_DEC;
@@ -273,7 +323,7 @@ export async function fetchAllReserves(userAddress: string): Promise<ReserveStat
 
       const curUtil_fp = Math.round(util * SCALAR_F);
       const FIXED_95PCT = 9_500_000;
-      const BACKSTOP_FP = 2_000_000; // 20% backstop take rate (Etherfuse pool)
+      const BACKSTOP_FP = pool.backstopFP;
 
       let baseRate_fp: number;
       if (curUtil_fp <= utilOpt_fp) {
@@ -315,7 +365,7 @@ export async function fetchAllReserves(userAddress: string): Promise<ReserveStat
         ? (borrowBlndYr * blndPrice / totalBorrowUsd) * 100
         : 0;
 
-      console.log(`[blend] ${asset.symbol} util=${util.toFixed(4)} borrowApr=${interestBorrowApr.toFixed(4)}% supplyApr=${interestSupplyApr.toFixed(4)}% blndSupplyApr=${blndSupplyApr.toFixed(4)}% supplyEps=${supplyEps}`);
+      console.log(`[blend:${pool.name}] ${asset.symbol} util=${util.toFixed(4)} borrowApr=${interestBorrowApr.toFixed(4)}% supplyApr=${interestSupplyApr.toFixed(4)}% blndSupplyApr=${blndSupplyApr.toFixed(4)}% supplyEps=${supplyEps}`);
 
       return {
         asset: { ...asset, cFactor, maxUtil: maxUtilActual },
@@ -357,12 +407,13 @@ export interface UserPositions {
 }
 
 export async function fetchUserPositions(
+  pool: PoolDef,
   userAddress: string,
   reserves: ReserveStats[],
 ): Promise<UserPositions> {
-  const pool = new Contract(POOL_ID);
+  const poolContract = new Contract(pool.id);
   const raw  = await simulate(userAddress,
-    pool.call("get_positions", new Address(userAddress).toScVal())
+    poolContract.call("get_positions", new Address(userAddress).toScVal())
   );
 
   const byAsset = new Map<string, AssetPosition>();
@@ -402,14 +453,15 @@ export async function fetchAssetBalance(userAddress: string, assetId: string): P
 }
 
 export async function fetchPendingBlnd(
+  pool: PoolDef,
   userAddress: string,
   asset: AssetInfo,
 ): Promise<number> {
-  const pool = new Contract(POOL_ID);
+  const poolContract = new Contract(pool.id);
   let total  = 0;
   for (const tokenId of [asset.supplyTokenId, asset.borrowTokenId]) {
     const raw = await simulate(userAddress,
-      pool.call(
+      poolContract.call(
         "get_user_emissions",
         new Address(userAddress).toScVal(),
         nativeToScVal(tokenId, { type: "u32" }),
@@ -452,13 +504,14 @@ function buildOpenRequests(
 // ── Transaction builders ──────────────────────────────────────────────────────
 
 export async function buildApproveXdr(
+  pool: PoolDef,
   userAddress: string,
   assetId: string,
   amountStroops: bigint,
 ): Promise<string> {
   const token     = new Contract(assetId);
   const addrScVal = new Address(userAddress).toScVal();
-  const poolScVal = new Address(POOL_ID).toScVal();
+  const poolScVal = new Address(pool.id).toScVal();
   const ledger    = await server.getLatestLedger();
   const expiry    = ledger.sequence + 120;
 
@@ -483,22 +536,23 @@ export async function buildApproveXdr(
 }
 
 export async function buildOpenPositionXdr(
+  pool: PoolDef,
   userAddress: string,
   asset: AssetInfo,
   initialStroops: bigint,
   loops: number,
 ): Promise<string> {
-  const cFactorBn = BigInt(Math.round(asset.cFactor * SCALAR_F));
-  const pool      = new Contract(POOL_ID);
-  const addrScVal = new Address(userAddress).toScVal();
-  const requests  = buildRequestsVec(buildOpenRequests(asset.id, initialStroops, cFactorBn, loops));
+  const cFactorBn    = BigInt(Math.round(asset.cFactor * SCALAR_F));
+  const poolContract = new Contract(pool.id);
+  const addrScVal    = new Address(userAddress).toScVal();
+  const requests     = buildRequestsVec(buildOpenRequests(asset.id, initialStroops, cFactorBn, loops));
 
   const acc = await server.getAccount(userAddress);
   const tx  = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
     networkPassphrase: NETWORK,
   })
-    .addOperation(pool.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
+    .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
     .setTimeout(60).build();
 
   const sim = await server.simulateTransaction(tx);
@@ -508,28 +562,29 @@ export async function buildOpenPositionXdr(
 }
 
 export async function buildClosePositionXdr(
+  pool: PoolDef,
   userAddress: string,
   pos: AssetPosition,
 ): Promise<{ approveXdr: string; submitXdr: string }> {
   // Approve a 1% buffer in case interest has accrued between read and submit
   const netDebitBuf = BigInt(Math.ceil(pos.debt * SCALAR_F * 0.01));
-  const approveXdr  = await buildApproveXdr(userAddress, pos.asset.id, netDebitBuf);
+  const approveXdr  = await buildApproveXdr(pool, userAddress, pos.asset.id, netDebitBuf);
 
-  // WITHDRAW all collateral (b-tokens → actual CETES), REPAY all debt + 0.5% buffer
+  // WITHDRAW all collateral (b-tokens → actual tokens), REPAY all debt + 0.5% buffer
   const debtWithBuf = BigInt(Math.ceil(pos.debt * SCALAR_F * 1.005));
   const requests    = buildRequestsVec([
     buildRequest(pos.asset.id, pos.bTokens, WITHDRAW_COLLATERAL),
     buildRequest(pos.asset.id, debtWithBuf, REPAY),
   ]);
 
-  const pool      = new Contract(POOL_ID);
-  const addrScVal = new Address(userAddress).toScVal();
-  const acc       = await server.getAccount(userAddress);
-  const tx        = new TransactionBuilder(acc, {
+  const poolContract = new Contract(pool.id);
+  const addrScVal    = new Address(userAddress).toScVal();
+  const acc          = await server.getAccount(userAddress);
+  const tx           = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
     networkPassphrase: NETWORK,
   })
-    .addOperation(pool.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
+    .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
     .setTimeout(60).build();
 
   const sim = await server.simulateTransaction(tx);
@@ -542,12 +597,13 @@ export async function buildClosePositionXdr(
 }
 
 export async function buildClaimXdr(
+  pool: PoolDef,
   userAddress: string,
   asset: AssetInfo,
 ): Promise<string> {
-  const pool      = new Contract(POOL_ID);
-  const addrScVal = new Address(userAddress).toScVal();
-  const tokenIds  = xdr.ScVal.scvVec([
+  const poolContract = new Contract(pool.id);
+  const addrScVal    = new Address(userAddress).toScVal();
+  const tokenIds     = xdr.ScVal.scvVec([
     nativeToScVal(asset.supplyTokenId, { type: "u32" }),
     nativeToScVal(asset.borrowTokenId, { type: "u32" }),
   ]);
@@ -557,7 +613,7 @@ export async function buildClaimXdr(
     fee: (BigInt(BASE_FEE) * 10n).toString(),
     networkPassphrase: NETWORK,
   })
-    .addOperation(pool.call("claim", addrScVal, tokenIds, addrScVal))
+    .addOperation(poolContract.call("claim", addrScVal, tokenIds, addrScVal))
     .setTimeout(60).build();
 
   const sim = await server.simulateTransaction(tx);
