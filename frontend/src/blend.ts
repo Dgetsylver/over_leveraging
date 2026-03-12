@@ -3,6 +3,7 @@
  */
 
 import {
+  Account,
   Address,
   BASE_FEE,
   Contract,
@@ -18,7 +19,12 @@ import {
 
 export const BLND_ID   = "CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY";
 export const NETWORK   = Networks.PUBLIC;
-export const RPC_URL   = "https://rpc.lightsail.network/";
+// soroban-rpc.creit.tech is the RPC used by the official Blend UI — CORS-enabled for browsers
+export const RPC_URL   = "https://soroban-rpc.creit.tech/";
+
+// Null account: valid on mainnet, sequence=0 — used for read-only simulations
+// so we never need to call getAccount() just to read pool data
+const NULL_ACCOUNT = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 // Token rate scale (b_rate / d_rate): 12 decimal places
 const RATE_DEC   = 1_000_000_000_000n;
@@ -204,9 +210,11 @@ function buildRequestsVec(items: xdr.ScVal[]): xdr.ScVal {
 
 // ── Simulate helper ───────────────────────────────────────────────────────────
 
-async function simulate(userAddress: string, op: xdr.Operation): Promise<any> {
+// Read-only simulation: uses the null account so no getAccount() RPC call is needed.
+// Contract call arguments (e.g. user address) are still passed via op parameters.
+async function simulate(op: xdr.Operation): Promise<any> {
   try {
-    const acc = await server.getAccount(userAddress);
+    const acc = new Account(NULL_ACCOUNT, "0");
     const tx  = new TransactionBuilder(acc, { fee: BASE_FEE, networkPassphrase: NETWORK })
       .addOperation(op).setTimeout(30).build();
     const sim = await server.simulateTransaction(tx);
@@ -275,28 +283,26 @@ export async function fetchAllReserves(pool: PoolDef, userAddress: string): Prom
   const blndPrice    = await fetchBlndPrice(pool, userAddress);
   const assets       = getPoolAssets(pool);
 
-  return Promise.all(
-    assets.map(async (asset): Promise<ReserveStats> => {
-      let reserveRaw: any = null;
-      let priceRaw: any   = null;
-      let supplyEmissions: any = null;
-      let borrowEmissions: any = null;
-      try {
-        [reserveRaw, priceRaw, supplyEmissions, borrowEmissions] = await Promise.all([
-          simulate(userAddress, poolContract.call("get_reserve", new Address(asset.id).toScVal())),
-          simulate(userAddress, oracle.call("lastprice", assetScVal(asset.id))),
-          simulate(userAddress, poolContract.call("get_reserve_emissions", nativeToScVal(asset.supplyTokenId, { type: "u32" }))),
-          simulate(userAddress, poolContract.call("get_reserve_emissions", nativeToScVal(asset.borrowTokenId, { type: "u32" }))),
-        ]);
-      } catch (e) {
-        console.warn(`fetchAllReserves: error fetching ${asset.symbol}:`, e);
-      }
+  // Process assets sequentially to avoid bursting the RPC with too many concurrent requests
+  const results: ReserveStats[] = [];
+  for (const asset of assets) {
+    let reserveRaw: any = null;
+    let priceRaw: any   = null;
+    let supplyEmissions: any = null;
+    let borrowEmissions: any = null;
+    try {
+      [reserveRaw, priceRaw, supplyEmissions, borrowEmissions] = await Promise.all([
+        simulate(poolContract.call("get_reserve", new Address(asset.id).toScVal())),
+        simulate(oracle.call("lastprice", assetScVal(asset.id))),
+        simulate(poolContract.call("get_reserve_emissions", nativeToScVal(asset.supplyTokenId, { type: "u32" }))),
+        simulate(poolContract.call("get_reserve_emissions", nativeToScVal(asset.borrowTokenId, { type: "u32" }))),
+      ]);
+    } catch (e) {
+      console.warn(`fetchAllReserves: error fetching ${asset.symbol}:`, e);
+    }
 
       const priceUsd = priceRaw ? Number(BigInt(priceRaw.price)) / pool.oracleDec : 0;
 
-      // Debug: log raw contract data so we can verify field names / values
-      console.log(`[blend:${pool.name}] ${asset.symbol} reserveRaw:`, JSON.stringify(reserveRaw, (_k, v) => typeof v === "bigint" ? v.toString() : v, 2));
-      console.log(`[blend:${pool.name}] ${asset.symbol} priceUsd=${priceUsd}, supplyEmissions:`, supplyEmissions, "borrowEmissions:", borrowEmissions);
 
       const bRate    = reserveRaw ? BigInt(reserveRaw.data.b_rate) : RATE_DEC;
       const dRate    = reserveRaw ? BigInt(reserveRaw.data.d_rate) : RATE_DEC;
@@ -367,7 +373,7 @@ export async function fetchAllReserves(pool: PoolDef, userAddress: string): Prom
 
       console.log(`[blend:${pool.name}] ${asset.symbol} util=${util.toFixed(4)} borrowApr=${interestBorrowApr.toFixed(4)}% supplyApr=${interestSupplyApr.toFixed(4)}% blndSupplyApr=${blndSupplyApr.toFixed(4)}% supplyEps=${supplyEps}`);
 
-      return {
+      results.push({
         asset: { ...asset, cFactor, maxUtil: maxUtilActual },
         cFactor,
         priceUsd,
@@ -384,9 +390,9 @@ export async function fetchAllReserves(pool: PoolDef, userAddress: string): Prom
         netBorrowCost: interestBorrowApr - blndBorrowApr,
         supplyEps,
         borrowEps,
-      };
-    })
-  );
+      });
+  }
+  return results;
 }
 
 // ── User position ─────────────────────────────────────────────────────────────
@@ -412,7 +418,7 @@ export async function fetchUserPositions(
   reserves: ReserveStats[],
 ): Promise<UserPositions> {
   const poolContract = new Contract(pool.id);
-  const raw  = await simulate(userAddress,
+  const raw  = await simulate(
     poolContract.call("get_positions", new Address(userAddress).toScVal())
   );
 
@@ -444,7 +450,7 @@ export async function fetchUserPositions(
 
 export async function fetchAssetBalance(userAddress: string, assetId: string): Promise<number> {
   const token = new Contract(assetId);
-  const raw   = await simulate(userAddress,
+  const raw   = await simulate(
     token.call("balance", new Address(userAddress).toScVal())
   );
   if (raw === null) return 0;
@@ -460,7 +466,7 @@ export async function fetchPendingBlnd(
   const poolContract = new Contract(pool.id);
   let total  = 0;
   for (const tokenId of [asset.supplyTokenId, asset.borrowTokenId]) {
-    const raw = await simulate(userAddress,
+    const raw = await simulate(
       poolContract.call(
         "get_user_emissions",
         new Address(userAddress).toScVal(),

@@ -307,8 +307,11 @@ function updatePreview() {
 
 // ── Load data ─────────────────────────────────────────────────────────────────
 
+let _loadInProgress = false;
+
 async function loadAll() {
-  if (!userAddress) return;
+  if (!userAddress || _loadInProgress) return;
+  _loadInProgress = true;
   try {
     reserves  = await fetchAllReserves(selectedPool, userAddress);
     positions = await fetchUserPositions(selectedPool, userAddress, reserves);
@@ -327,6 +330,8 @@ async function loadAll() {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("Failed to load pool data:", e);
     toast(`Load failed: ${msg.slice(0, 120)}`, "error");
+  } finally {
+    _loadInProgress = false;
   }
 }
 
