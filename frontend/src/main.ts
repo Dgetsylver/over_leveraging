@@ -203,7 +203,7 @@ function renderSelectedAsset() {
   const util = rs.totalSupply > 0 ? rs.totalBorrow / rs.totalSupply : 0;
   const utilEl = $("stat-util");
   utilEl.textContent = `${(util * 100).toFixed(1)}%`;
-  utilEl.className = `stat-value ${util > MAX_SAFE_UTILIZATION ? "hf-bad" : util > 0.75 ? "hf-warn" : ""}`;
+  utilEl.className = `stat-value ${util > 0.90 ? "hf-bad" : util > 0.75 ? "hf-warn" : ""}`;
 
   $("stat-price").textContent      = rs.priceUsd > 0 ? `$${fmt(rs.priceUsd, 4)}` : "—";
 
