@@ -478,9 +478,9 @@ export function hfForLeverage(lev: number, c: number): number {
   return lev <= 1 ? Infinity : (c * lev) / (lev - 1);
 }
 
-/** Maximum leverage where HF ≥ 1.06 (safe minimum with rounding margin for iterative loop). */
+/** Maximum leverage where HF ≥ 1.02 (small buffer above on-chain MIN_HF of ~1.0). */
 export function maxLeverageFor(c: number): number {
-  return c >= 1.06 ? 100 : 1.06 / (1.06 - c);
+  return c >= 1.02 ? 100 : 1.02 / (1.02 - c);
 }
 
 /**
