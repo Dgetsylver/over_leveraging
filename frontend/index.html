@@ -31,6 +31,7 @@
             <span class="wallet-dot"></span>
             <span id="wallet-address" class="mono"></span>
           </div>
+          <button id="switch-wallet-btn" class="btn btn-ghost btn-sm" title="Switch to a different account">⟳ Switch</button>
           <button id="disconnect-btn" class="btn btn-ghost btn-sm">Disconnect</button>
         </div>
       </div>
@@ -125,6 +126,11 @@
               <h2>Your Position</h2>
               <button id="refresh-btn" class="btn btn-ghost btn-sm">↻</button>
             </div>
+            <div class="pool-blnd-row">
+              <span class="metric-label">Pending BLND (pool)</span>
+              <span class="metric-value mono" id="pos-blnd">—</span>
+              <button id="claim-btn" class="btn btn-secondary btn-sm" disabled>Claim all BLND</button>
+            </div>
             <div id="no-position" class="empty-state">No active position for this asset.</div>
             <div id="position-data" class="hidden">
               <div class="position-grid">
@@ -145,22 +151,21 @@
                   <span class="metric-value mono" id="pos-leverage">—</span>
                 </div>
                 <div class="position-metric">
-                  <span class="metric-label">Health Factor</span>
+                  <span class="metric-label">Asset HF</span>
                   <span class="metric-value" id="pos-hf">—</span>
                   <div class="hf-bar-wrap"><div class="hf-bar" id="hf-bar"></div></div>
                 </div>
                 <div class="position-metric">
-                  <span class="metric-label">Net APY</span>
-                  <span class="metric-value" id="pos-net-apr">—</span>
+                  <span class="metric-label">Pool HF</span>
+                  <span class="metric-value" id="pos-pool-hf">—</span>
                 </div>
                 <div class="position-metric">
-                  <span class="metric-label">Pending BLND</span>
-                  <span class="metric-value mono" id="pos-blnd">—</span>
+                  <span class="metric-label">Net APY <span class="tooltip" title="Return on your initial deposit (equity) at current leverage">?</span></span>
+                  <span class="metric-value" id="pos-net-apr">—</span>
                 </div>
               </div>
               <div class="position-actions">
                 <button id="close-btn" class="btn btn-danger" disabled>Close Position</button>
-                <button id="claim-btn" class="btn btn-secondary" disabled>Claim BLND</button>
               </div>
             </div>
           </section>
@@ -179,10 +184,10 @@
               <span class="balance-hint">Wallet: <span id="asset-balance">—</span></span>
             </div>
             <div class="form-group">
-              <label>Loops <span class="tooltip" title="More loops = higher leverage, lower Health Factor">?</span></label>
+              <label>Leverage <span class="tooltip" title="Higher leverage = higher yield and lower Health Factor">?</span></label>
               <div class="slider-row">
-                <input type="range" id="loops-slider" min="1" max="9" value="5" class="slider" />
-                <span id="loops-display" class="slider-value mono">7</span>
+                <input type="range" id="leverage-slider" min="1.1" max="12.9" step="0.1" value="2.0" class="slider" />
+                <span id="leverage-display" class="slider-value mono">2.0×</span>
               </div>
               <div class="leverage-preview">
                 <div class="preview-row">

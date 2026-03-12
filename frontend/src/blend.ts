@@ -466,106 +466,44 @@ export async function fetchAssetBalance(userAddress: string, assetId: string): P
   return Number(stroops) / SCALAR_F;
 }
 
-/**
- * Compute full pending BLND for one asset (supply + borrow sides).
- *
- * `get_user_emissions` only returns the checkpointed `accrued` value — it does
- * NOT include emissions that have accrued since the user's last interaction.
- * Full formula:
- *   current_reserve_index = reserve.index + eps * min(now, expiration - last_time) * SCALAR / total_tokens
- *   user_pending = user.accrued + (current_reserve_index - user.index) * user_tokens / SCALAR
- */
-export async function fetchPendingBlnd(
-  pool: PoolDef,
-  userAddress: string,
-  asset: AssetInfo,
-  rs: ReserveStats | undefined,
-  bTokens: bigint,
-  dTokens: bigint,
-): Promise<number> {
-  const poolContract = new Contract(pool.id);
-  const now = BigInt(Math.floor(Date.now() / 1000));
-  let total = 0n;
-
-  const sides = [
-    {
-      tokenId:     asset.supplyTokenId,
-      userTokens:  bTokens,
-      totalTokens: rs?.bSupply ?? 0n,
-      cachedEmit:  rs?.supplyEmission,
-    },
-    {
-      tokenId:     asset.borrowTokenId,
-      userTokens:  dTokens,
-      totalTokens: rs?.dSupply ?? 0n,
-      cachedEmit:  rs?.borrowEmission,
-    },
-  ];
-
-  for (const { tokenId, userTokens, totalTokens, cachedEmit } of sides) {
-    if (userTokens === 0n) continue;
-
-    // Fetch user emission checkpoint (always need fresh data for the user)
-    const userEmission = await simulate(
-      poolContract.call(
-        "get_user_emissions",
-        new Address(userAddress).toScVal(),
-        nativeToScVal(tokenId, { type: "u32" }),
-      )
-    );
-    if (!userEmission) continue;
-
-    const userAccrued = BigInt(userEmission.accrued);
-    const userIndex   = BigInt(userEmission.index);
-
-    // Use cached reserve emission data if available (already fetched in fetchAllReserves),
-    // otherwise fetch fresh from chain.
-    const resEmission = cachedEmit ?? await simulate(
-      poolContract.call("get_reserve_emissions", nativeToScVal(tokenId, { type: "u32" }))
-    );
-
-    let currentIndex = resEmission ? BigInt(resEmission.index) : 0n;
-    if (resEmission && totalTokens > 0n) {
-      const eps        = BigInt(resEmission.eps);
-      const lastTime   = BigInt(resEmission.last_time);
-      const expiration = BigInt(resEmission.expiration);
-      const endTime    = now < expiration ? now : expiration;
-      const deltaT     = endTime > lastTime ? endTime - lastTime : 0n;
-      // index grows by eps * deltaT * SCALAR / total_tokens (avoids integer division loss)
-      currentIndex += eps * deltaT * SCALAR / totalTokens;
-    }
-
-    const indexDelta = currentIndex - userIndex;
-    const pending    = userAccrued + (indexDelta > 0n ? indexDelta * userTokens / SCALAR : 0n);
-    if (pending > 0n) total += pending;
-  }
-
-  return Number(total) / SCALAR_F;
-}
 
 // ── Leverage math ─────────────────────────────────────────────────────────────
 
-export function leverageAt(loops: number, c: number): number {
-  return (1 - Math.pow(c, loops + 1)) / (1 - c);
+/** Health factor at a given leverage and collateral factor. */
+export function hfForLeverage(lev: number, c: number): number {
+  return lev <= 1 ? Infinity : (c * lev) / (lev - 1);
 }
 
-export function hfAt(loops: number, c: number): number {
-  return (1 - Math.pow(c, loops + 1)) / (1 - Math.pow(c, loops));
+/** Maximum leverage where HF ≥ 1.03 (safe minimum). */
+export function maxLeverageFor(c: number): number {
+  return c >= 1.03 ? 100 : 1.03 / (1.03 - c);
 }
 
+/**
+ * Build supply/borrow request sequence to reach a target leverage.
+ * Each loop supplies current balance as collateral, then borrows the minimum of
+ * (balance × cFactor) and (remaining borrow needed). The final step supplies
+ * whatever is left. This achieves exactly targetLev × initial total collateral.
+ */
 function buildOpenRequests(
   assetId: string,
   initialStroops: bigint,
-  cFactor: bigint,
-  n: number,
+  cFactorBn: bigint,    // cFactor × SCALAR e.g. 9_500_000 for 0.95
+  targetLev: number,
 ): xdr.ScVal[] {
   const items: xdr.ScVal[] = [];
-  let balance = initialStroops;
-  for (let i = 0; i < n; i++) {
-    const supply = balance;
-    const borrow = supply * cFactor / SCALAR;
-    items.push(buildRequest(assetId, supply, SUPPLY_COLLATERAL));
+  const targetBorrow = BigInt(Math.round((targetLev - 1) * Number(initialStroops)));
+  let balance      = initialStroops;
+  let totalBorrowed = 0n;
+
+  while (totalBorrowed < targetBorrow) {
+    items.push(buildRequest(assetId, balance, SUPPLY_COLLATERAL));
+    const maxCanBorrow = balance * cFactorBn / SCALAR;
+    const stillNeeded  = targetBorrow - totalBorrowed;
+    const borrow       = maxCanBorrow < stillNeeded ? maxCanBorrow : stillNeeded;
+    if (borrow <= 0n) break;
     items.push(buildRequest(assetId, borrow, BORROW));
+    totalBorrowed += borrow;
     balance = borrow;
   }
   items.push(buildRequest(assetId, balance, SUPPLY_COLLATERAL));
@@ -611,12 +549,12 @@ export async function buildOpenPositionXdr(
   userAddress: string,
   asset: AssetInfo,
   initialStroops: bigint,
-  loops: number,
+  leverage: number,
 ): Promise<string> {
   const cFactorBn    = BigInt(Math.round(asset.cFactor * SCALAR_F));
   const poolContract = new Contract(pool.id);
   const addrScVal    = new Address(userAddress).toScVal();
-  const requests     = buildRequestsVec(buildOpenRequests(asset.id, initialStroops, cFactorBn, loops));
+  const requests     = buildRequestsVec(buildOpenRequests(asset.id, initialStroops, cFactorBn, leverage));
 
   const acc = await server.getAccount(userAddress);
   const tx  = new TransactionBuilder(acc, {
@@ -667,24 +605,54 @@ export async function buildClosePositionXdr(
   };
 }
 
+/**
+ * Returns total pending BLND (in full BLND, 7 decimals) across ALL user
+ * positions in the pool by simulating the claim call. This gives the exact
+ * on-chain amount — no manual index math needed.
+ */
+export async function fetchPoolPendingBlnd(
+  pool: PoolDef,
+  userAddress: string,
+  positions: UserPositions,
+): Promise<number> {
+  // Collect all token IDs where user has positions
+  const tokenIds: number[] = [];
+  for (const pos of positions.byAsset.values()) {
+    if (pos.bTokens > 0n) tokenIds.push(pos.asset.supplyTokenId);
+    if (pos.dTokens > 0n) tokenIds.push(pos.asset.borrowTokenId);
+  }
+  if (tokenIds.length === 0) return 0;
+
+  const poolContract = new Contract(pool.id);
+  const addrScVal    = new Address(userAddress).toScVal();
+  const tokenIdsScVal = xdr.ScVal.scvVec(
+    tokenIds.map(id => nativeToScVal(id, { type: "u32" }))
+  );
+  const result = await simulate(
+    poolContract.call("claim", addrScVal, tokenIdsScVal, addrScVal)
+  );
+  if (result === null) return 0;
+  const stroops = typeof result === "bigint" ? result : BigInt(result as any);
+  return Number(stroops > 0n ? stroops : 0n) / SCALAR_F;
+}
+
 export async function buildClaimXdr(
   pool: PoolDef,
   userAddress: string,
-  asset: AssetInfo,
+  tokenIds: number[],
 ): Promise<string> {
   const poolContract = new Contract(pool.id);
   const addrScVal    = new Address(userAddress).toScVal();
-  const tokenIds     = xdr.ScVal.scvVec([
-    nativeToScVal(asset.supplyTokenId, { type: "u32" }),
-    nativeToScVal(asset.borrowTokenId, { type: "u32" }),
-  ]);
+  const tokenIds_scv = xdr.ScVal.scvVec(
+    tokenIds.map(id => nativeToScVal(id, { type: "u32" }))
+  );
 
   const acc = await server.getAccount(userAddress);
   const tx  = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
     networkPassphrase: NETWORK,
   })
-    .addOperation(poolContract.call("claim", addrScVal, tokenIds, addrScVal))
+    .addOperation(poolContract.call("claim", addrScVal, tokenIds_scv, addrScVal))
     .setTimeout(60).build();
 
   const sim = await server.simulateTransaction(tx);

@@ -17,14 +17,14 @@ import {
   fetchAllReserves,
   fetchUserPositions,
   fetchAssetBalance,
-  fetchPendingBlnd,
+  fetchPoolPendingBlnd,
   buildApproveXdr,
   buildOpenPositionXdr,
   buildClosePositionXdr,
   buildClaimXdr,
   submitSignedXdr,
-  leverageAt,
-  hfAt,
+  hfForLeverage,
+  maxLeverageFor,
   type AssetInfo,
   type PoolDef,
   type ReserveStats,
@@ -57,11 +57,9 @@ let selectedAsset: AssetInfo     = assets[2]; // default: CETES (index 2 in Ethe
 // ── DOM helpers ───────────────────────────────────────────────────────────────
 
 const $ = (id: string) => document.getElementById(id)!;
-const q = (sel: string) => document.querySelector<HTMLElement>(sel)!;
 const fmt  = (n: number, d = 2) =>
   n.toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d });
 const fmtAddr = (addr: string) => addr.slice(0, 6) + "…" + addr.slice(-4);
-const fmtApr  = (n: number) => `${n >= 0 ? "+" : ""}${fmt(n, 2)}%`;
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 
@@ -114,12 +112,10 @@ function buildPoolTabs() {
 function selectPool(pool: PoolDef) {
   selectedPool = pool;
 
-  // Update pool tab active states
   document.querySelectorAll<HTMLButtonElement>(".pool-tab").forEach(btn => {
     btn.classList.toggle("active", btn.dataset["poolId"] === pool.id);
   });
 
-  // Show/hide frozen warning banner
   const banner = $("pool-frozen-banner");
   if (pool.status !== 1) {
     banner.classList.remove("hidden");
@@ -128,32 +124,28 @@ function selectPool(pool: PoolDef) {
     banner.classList.add("hidden");
   }
 
-  // Rebuild assets for new pool
   assets = getPoolAssets(pool);
   selectedAsset = assets[0];
 
   buildAssetTabs();
   ($("asset-symbol-suffix") as HTMLElement).textContent = selectedAsset.symbol;
-  updateSliderMax(selectedAsset.cFactor);
+  updateLeverageSlider(selectedAsset.cFactor);
 
   if (userAddress) loadAll();
 }
 
 // ── Asset tabs ────────────────────────────────────────────────────────────────
 
-/** Max loops where hfAt(n, c) >= 1.03. */
-function maxLoopsFor(c: number): number {
-  for (let n = 50; n >= 1; n--) {
-    if (hfAt(n, c) >= 1.03) return n;
-  }
-  return 0;
-}
-
-function updateSliderMax(c: number) {
-  const slider  = $("loops-slider") as HTMLInputElement;
-  const maxL    = maxLoopsFor(c);
-  slider.max    = String(maxL);
-  if (parseInt(slider.value) > maxL) slider.value = String(maxL);
+/** Set leverage slider min/max/step based on asset cFactor. */
+function updateLeverageSlider(c: number) {
+  const slider = $("leverage-slider") as HTMLInputElement;
+  const maxLev = Math.floor(maxLeverageFor(c) * 10) / 10; // floor to 1 decimal
+  slider.min  = "1.1";
+  slider.max  = String(maxLev);
+  slider.step = "0.1";
+  const cur = parseFloat(slider.value);
+  if (cur > maxLev) slider.value = String(maxLev);
+  if (cur < 1.1)    slider.value = "1.1";
 }
 
 function buildAssetTabs() {
@@ -176,31 +168,19 @@ function selectAsset(asset: AssetInfo) {
   });
   ($("asset-symbol-suffix") as HTMLElement).textContent = asset.symbol;
 
-  // Update slider max immediately (use live cFactor from reserves if available)
   const rs = reserves.find(r => r.asset.id === asset.id);
-  updateSliderMax(rs ? rs.cFactor : asset.cFactor);
+  updateLeverageSlider(rs ? rs.cFactor : asset.cFactor);
 
-  // Render from cache instantly — no full reload on every tab switch
   renderSelectedAsset();
-
-  // Only refresh balance + pending BLND (fast, doesn't re-fetch reserves)
   if (userAddress) refreshTabData();
 }
 
-/** Fetch only balance + pending BLND for the current asset. */
+/** Fetch only balance for the current asset (BLND is pool-wide, fetched in loadAll). */
 async function refreshTabData() {
   if (!userAddress) return;
   try {
-    const pos = positions.byAsset.get(selectedAsset.id);
-    const rs  = reserves.find(r => r.asset.id === selectedAsset.id);
-    const [bal, blnd] = await Promise.all([
-      fetchAssetBalance(userAddress, selectedAsset.id),
-      fetchPendingBlnd(selectedPool, userAddress, selectedAsset, rs,
-        pos?.bTokens ?? 0n, pos?.dTokens ?? 0n),
-    ]);
+    const bal = await fetchAssetBalance(userAddress, selectedAsset.id);
     $("asset-balance").textContent = `${fmt(bal, 4)} ${selectedAsset.symbol}`;
-    $("pos-blnd").textContent      = `${fmt(blnd, 4)} BLND`;
-    ($("claim-btn") as HTMLButtonElement).disabled = blnd <= 0;
   } catch { /* silently ignore */ }
 }
 
@@ -210,30 +190,22 @@ function renderSelectedAsset() {
   const rs = reserves.find(r => r.asset.id === selectedAsset.id);
   if (!rs) return;
 
-  // Keep slider max in sync with live cFactor from pool
-  updateSliderMax(rs.cFactor);
+  updateLeverageSlider(rs.cFactor);
 
-  // Pool stats bar
-  const maxLev = 1 / (1 - rs.cFactor);
+  const maxLev = 1.03 / (1.03 - rs.cFactor);
   $("stat-cfactor").textContent    = `${(rs.cFactor * 100).toFixed(0)}%`;
   $("stat-max-lev").textContent    = `${maxLev.toFixed(2)}×`;
   $("stat-liquidity").textContent  = `${fmt(rs.available, 0)} ${rs.asset.symbol}`;
   $("stat-price").textContent      = rs.priceUsd > 0 ? `$${fmt(rs.priceUsd, 4)}` : "—";
 
-  // APR breakdown
-  // Supply: interest + BLND
   renderAprLine("supply-interest-apr", rs.interestSupplyApr, false);
   renderAprLine("supply-blnd-apr",     rs.blndSupplyApr,     false, true);
   renderAprLine("supply-net-apr",      rs.netSupplyApr,      false);
-  // Borrow: interest - BLND
   renderAprLine("borrow-interest-apr", rs.interestBorrowApr, true);
   renderAprLine("borrow-blnd-apr",     rs.blndBorrowApr,     false, true);
   renderAprLine("borrow-net-cost",     rs.netBorrowCost,     true);
 
-  // Update leverage preview
   updatePreview();
-
-  // Update position display for this asset
   renderPosition();
 }
 
@@ -246,6 +218,20 @@ function renderAprLine(id: string, val: number, isCost: boolean, isBlnd = false)
     isCost ? (val > 5 ? "apr-bad" : val > 2 ? "apr-warn" : "apr-ok") :
              (val > 5 ? "apr-great" : val > 2 ? "apr-ok" : "apr-dim")
   );
+}
+
+// ── Pool-wide health factor ───────────────────────────────────────────────────
+
+function computePoolHF(): number {
+  let weightedCollateral = 0;
+  let totalDebt          = 0;
+  for (const pos of positions.byAsset.values()) {
+    const rs = reserves.find(r => r.asset.id === pos.asset.id);
+    if (!rs) continue;
+    weightedCollateral += pos.collateral * rs.cFactor * rs.priceUsd;
+    totalDebt          += pos.debt * rs.priceUsd;
+  }
+  return totalDebt > 0 ? weightedCollateral / totalDebt : Infinity;
 }
 
 // ── Position display ──────────────────────────────────────────────────────────
@@ -269,6 +255,7 @@ function renderPosition() {
   $("pos-equity").textContent     = `${fmt(pos.equity, 4)} ${pos.asset.symbol}`;
   $("pos-leverage").textContent   = `${fmt(pos.leverage, 2)}×`;
 
+  // Per-asset health factor
   const hf = pos.hf;
   const hfEl = $("pos-hf");
   hfEl.textContent = isFinite(hf) ? fmt(hf, 3) : "∞";
@@ -278,7 +265,13 @@ function renderPosition() {
   bar.style.width      = `${barPct}%`;
   bar.style.background = hf > 1.1 ? "var(--success)" : hf > 1.03 ? "var(--warning)" : "var(--danger)";
 
-  // Net APY at current leverage
+  // Pool-wide health factor
+  const poolHF   = computePoolHF();
+  const poolHFEl = $("pos-pool-hf");
+  poolHFEl.textContent = isFinite(poolHF) ? fmt(poolHF, 3) : "∞";
+  poolHFEl.className   = `metric-value ${poolHF > 1.1 ? "hf-ok" : poolHF > 1.03 ? "hf-warn" : "hf-bad"}`;
+
+  // Net APY at current leverage — this is % of initial equity (your deposit)
   const rs = reserves.find(r => r.asset.id === selectedAsset.id);
   const netAprEl = $("pos-net-apr");
   if (rs && pos.leverage > 0) {
@@ -294,24 +287,23 @@ function renderPosition() {
 // ── Leverage preview ──────────────────────────────────────────────────────────
 
 function updatePreview() {
-  const loops   = parseInt(($("loops-slider") as HTMLInputElement).value);
+  const slider  = $("leverage-slider") as HTMLInputElement;
+  const lev     = parseFloat(slider.value) || 1.1;
   const initial = parseFloat(($("initial-input") as HTMLInputElement).value) || 0;
-  const c   = selectedAsset.cFactor;
-  const lev = leverageAt(loops, c);
-  const hf  = hfAt(loops, c);
-  const rs  = reserves.find(r => r.asset.id === selectedAsset.id);
+  const c       = selectedAsset.cFactor;
+  const hf      = hfForLeverage(lev, c);
+  const rs      = reserves.find(r => r.asset.id === selectedAsset.id);
 
-  $("loops-display").textContent    = String(loops);
+  $("leverage-display").textContent = `${lev.toFixed(1)}×`;
   $("prev-lev").textContent         = `${lev.toFixed(2)}×`;
   $("prev-supply").textContent      = `${fmt(initial * lev, 2)} ${selectedAsset.symbol}`;
   $("prev-borrow").textContent      = `${fmt(initial * (lev - 1), 2)} ${selectedAsset.symbol}`;
-  $("prev-hf").textContent          = fmt(hf, 3);
+  $("prev-hf").textContent          = isFinite(hf) ? fmt(hf, 3) : "∞";
   $("prev-hf").className            = hf > 1.1 ? "hf-ok" : hf > 1.03 ? "hf-warn" : "hf-bad";
 
-  // Net APR at this leverage (supply side compounding, borrow side cost)
   if (rs) {
     const netApr = rs.netSupplyApr * lev - rs.netBorrowCost * (lev - 1);
-    $("prev-net-apr").textContent = `${fmt(netApr, 2)}% APR`;
+    $("prev-net-apr").textContent = `${fmt(netApr, 2)}% APY on equity`;
     $("prev-net-apr").className   = `prev-net-apr ${netApr > 0 ? "apr-great" : "apr-bad"}`;
   }
 
@@ -331,16 +323,13 @@ async function loadAll() {
     reserves  = await fetchAllReserves(selectedPool, userAddress);
     positions = await fetchUserPositions(selectedPool, userAddress, reserves);
 
-    // Update balance
+    // Balance for selected asset
     const bal = await fetchAssetBalance(userAddress, selectedAsset.id);
     $("asset-balance").textContent = `${fmt(bal, 4)} ${selectedAsset.symbol}`;
 
-    // Update pending BLND for selected asset
-    const posForBlnd = positions.byAsset.get(selectedAsset.id);
-    const rsForBlnd  = reserves.find(r => r.asset.id === selectedAsset.id);
-    const blnd = await fetchPendingBlnd(selectedPool, userAddress, selectedAsset, rsForBlnd,
-      posForBlnd?.bTokens ?? 0n, posForBlnd?.dTokens ?? 0n);
-    $("pos-blnd").textContent    = `${fmt(blnd, 4)} BLND`;
+    // Pool-wide pending BLND (simulate claim for all positions in this pool)
+    const blnd = await fetchPoolPendingBlnd(selectedPool, userAddress, positions);
+    $("pos-blnd").textContent = `${fmt(blnd, 4)} BLND`;
     ($("claim-btn") as HTMLButtonElement).disabled = blnd <= 0;
 
     renderSelectedAsset();
@@ -358,17 +347,17 @@ async function loadAll() {
 async function openPosition() {
   if (!userAddress) return;
   if (selectedPool.status !== 1) { toast("Pool is frozen — cannot open new positions", "error"); return; }
-  const initial = parseFloat(($("initial-input") as HTMLInputElement).value);
-  const loops   = parseInt(($("loops-slider") as HTMLInputElement).value);
+  const initial  = parseFloat(($("initial-input") as HTMLInputElement).value);
+  const leverage = parseFloat(($("leverage-slider") as HTMLInputElement).value);
   if (isNaN(initial) || initial <= 0) { toast("Enter a valid amount", "error"); return; }
-  if (hfAt(loops, selectedAsset.cFactor) < 1.03) { toast("HF too low — reduce loops", "error"); return; }
+  if (hfForLeverage(leverage, selectedAsset.cFactor) < 1.03) { toast("HF too low — reduce leverage", "error"); return; }
 
   const initialStroops = BigInt(Math.round(initial * 1e7));
   setLoading($("open-btn") as HTMLButtonElement, true);
   try {
     const approveXdr = await buildApproveXdr(selectedPool, userAddress, selectedAsset.id, initialStroops + 1n);
     await signAndSubmit(approveXdr, `Approve ${selectedAsset.symbol}`);
-    const submitXdr = await buildOpenPositionXdr(selectedPool, userAddress, selectedAsset, initialStroops, loops);
+    const submitXdr = await buildOpenPositionXdr(selectedPool, userAddress, selectedAsset, initialStroops, leverage);
     await signAndSubmit(submitXdr, `Open ${selectedAsset.symbol} leverage`);
     await loadAll();
   } catch (e: any) {
@@ -397,9 +386,17 @@ async function closePosition() {
 
 async function claimBlnd() {
   if (!userAddress) return;
+  // Collect all token IDs for ALL positions in this pool
+  const tokenIds: number[] = [];
+  for (const pos of positions.byAsset.values()) {
+    if (pos.bTokens > 0n) tokenIds.push(pos.asset.supplyTokenId);
+    if (pos.dTokens > 0n) tokenIds.push(pos.asset.borrowTokenId);
+  }
+  if (tokenIds.length === 0) { toast("No positions to claim from", "error"); return; }
+
   setLoading($("claim-btn") as HTMLButtonElement, true);
   try {
-    const claimXdr = await buildClaimXdr(selectedPool, userAddress, selectedAsset);
+    const claimXdr = await buildClaimXdr(selectedPool, userAddress, tokenIds);
     await signAndSubmit(claimXdr, "Claim BLND");
     await loadAll();
   } catch (e: any) {
@@ -414,7 +411,7 @@ function setLoading(btn: HTMLButtonElement, on: boolean) {
   btn.classList.toggle("btn-loading", on);
 }
 
-// ── Wallet connect / disconnect ───────────────────────────────────────────────
+// ── Wallet connect / switch / disconnect ──────────────────────────────────────
 
 async function connect() {
   try {
@@ -433,6 +430,22 @@ async function connect() {
   }
 }
 
+/** Re-open wallet modal to switch to a different account without a full page reload. */
+async function switchWallet() {
+  try {
+    const result = await StellarWalletsKit.authModal({ network: Networks.PUBLIC });
+    if (result.address === userAddress) return; // same address, nothing to do
+    userAddress = result.address;
+    $("wallet-address").textContent = fmtAddr(userAddress);
+    reserves  = [];
+    positions = { byAsset: new Map() };
+    await loadAll();
+    toast("Switched wallet", "success");
+  } catch (e: any) {
+    if (e?.message !== "User closed the modal") toast("Failed to switch wallet", "error");
+  }
+}
+
 async function disconnect() {
   await StellarWalletsKit.disconnect();
   userAddress = null;
@@ -447,15 +460,16 @@ async function disconnect() {
 // ── Event listeners ───────────────────────────────────────────────────────────
 
 $("connect-btn").addEventListener("click",    connect);
+$("switch-wallet-btn").addEventListener("click", switchWallet);
 $("disconnect-btn").addEventListener("click", disconnect);
 $("refresh-btn").addEventListener("click",    () => loadAll());
 $("open-btn").addEventListener("click",       openPosition);
 $("close-btn").addEventListener("click",      closePosition);
 $("claim-btn").addEventListener("click",      claimBlnd);
 
-($("loops-slider")  as HTMLInputElement).addEventListener("input",  updatePreview);
-($("initial-input") as HTMLInputElement).addEventListener("input",  () => { refreshTabData(); updatePreview(); });
-($("initial-input") as HTMLInputElement).addEventListener("change", () => { refreshTabData(); updatePreview(); });
+($("leverage-slider") as HTMLInputElement).addEventListener("input",  updatePreview);
+($("initial-input")   as HTMLInputElement).addEventListener("input",  () => { refreshTabData(); updatePreview(); });
+($("initial-input")   as HTMLInputElement).addEventListener("change", () => { refreshTabData(); updatePreview(); });
 
 // Init preview with defaults
 updatePreview();

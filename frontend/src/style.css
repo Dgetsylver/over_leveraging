@@ -156,6 +156,12 @@ main { flex: 1; max-width: 940px; width: 100%; margin: 0 auto; padding: 20px 16p
 .hf-bar { height: 100%; border-radius: 2px; transition: width .4s, background .4s; }
 .empty-state { color: var(--text-2); font-size: 14px; padding: 8px 0; }
 .position-actions { display: flex; gap: 10px; }
+.pool-blnd-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 0 14px; border-bottom: 1px solid var(--border); margin-bottom: 12px;
+}
+.pool-blnd-row .metric-label { color: var(--text-2); font-size: 12px; min-width: 0; }
+.pool-blnd-row .metric-value { font-family: var(--mono); font-size: 14px; margin-right: auto; }
 
 /* ── Open form ───────────────────────────────────────────────────────────── */
 
