@@ -609,18 +609,22 @@ export async function buildCloseSubmitXdr(
 }
 
 /**
- * Build a REPAY-only transaction to pay back all outstanding debt without
- * closing/unlooping the position. Uses submit with Soroban auth propagation —
- * no approve needed.
+ * Repay all outstanding debt without fully closing the position.
+ * Withdraws just enough collateral to cover the debt, then repays —
+ * all in one atomic submit call. Blend checks HF only at the end,
+ * so the intermediate state (tokens in flight) is fine. Result: same
+ * equity, zero debt, reduced collateral (user is de-leveraged).
  */
 export async function buildRepayXdr(
   pool: PoolDef,
   userAddress: string,
   pos: AssetPosition,
 ): Promise<string> {
+  // Withdraw slightly more than the exact debt to cover interest accrued during tx
   const repayAmount = pos.dTokens * pos.dRate / RATE_DEC * 1005n / 1000n; // +0.5% buffer
   const requests    = buildRequestsVec([
-    buildRequest(pos.asset.id, repayAmount, REPAY),
+    buildRequest(pos.asset.id, repayAmount, WITHDRAW_COLLATERAL), // pull from pool → wallet
+    buildRequest(pos.asset.id, repayAmount, REPAY),               // push from wallet → pool
   ]);
 
   const poolContract = new Contract(pool.id);
