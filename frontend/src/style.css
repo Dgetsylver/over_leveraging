@@ -44,6 +44,9 @@ header {
 }
 .badge-label { color: var(--text-3); }
 .badge-value { color: var(--text-2); font-weight: 500; }
+.expert-toggle { font-size: 11px; color: var(--text-3); border: 1px solid var(--border); border-radius: 20px; padding: 2px 10px; transition: all .2s; }
+.expert-toggle:hover { color: var(--warning); border-color: var(--warning); }
+.expert-toggle.expert-active { color: var(--warning); border-color: var(--warning); background: rgba(237,137,54,.12); }
 
 #wallet-area { display: flex; align-items: center; gap: 10px; }
 .wallet-connected { display: flex; align-items: center; gap: 10px; }
@@ -212,6 +215,17 @@ main { flex: 1; max-width: 940px; width: 100%; margin: 0 auto; padding: 20px 16p
   border-radius: var(--r-sm); padding: 9px 12px; font-size: 13px; color: var(--danger); margin-top: 10px;
 }
 .disclaimer { font-size: 12px; color: var(--text-3); margin-top: 10px; }
+
+/* ── Safety guard warnings ─────────────────────────────────────────────── */
+.safety-warnings { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.safety-error {
+  background: rgba(245,101,101,.1); border: 1px solid rgba(245,101,101,.3);
+  border-radius: var(--r-sm); padding: 9px 12px; font-size: 13px; color: var(--danger);
+}
+.safety-warn {
+  background: rgba(245,176,65,.1); border: 1px solid rgba(245,176,65,.3);
+  border-radius: var(--r-sm); padding: 9px 12px; font-size: 13px; color: var(--warning);
+}
 
 /* ── Buttons ──────────────────────────────────────────────────────────────── */
 

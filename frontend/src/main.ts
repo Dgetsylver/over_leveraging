@@ -55,6 +55,13 @@ let selectedPool: PoolDef        = KNOWN_POOLS[0]; // default: Etherfuse
 let assets: AssetInfo[]          = getPoolAssets(selectedPool);
 let selectedAsset: AssetInfo     = assets[2]; // default: CETES (index 2 in Etherfuse)
 
+// ── Expert mode ──────────────────────────────────────────────────────────────
+
+let expertMode = false;
+const MIN_HF_NORMAL = 1.01;
+const MIN_HF_EXPERT = 1.005;
+function minHF() { return expertMode ? MIN_HF_EXPERT : MIN_HF_NORMAL; }
+
 // ── DOM helpers ───────────────────────────────────────────────────────────────
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -141,7 +148,7 @@ function selectPool(pool: PoolDef) {
 function updateLeverageSlider(c: number, l: number = 1) {
   const slider = $("leverage-slider") as HTMLInputElement;
   const numIn  = $("leverage-input")  as HTMLInputElement;
-  const maxLev = Math.floor(maxLeverageFor(c, l) * 10) / 10; // floor to 1 decimal
+  const maxLev = Math.floor(maxLeverageFor(c, l, minHF()) * 10) / 10; // floor to 1 decimal
   slider.min = numIn.min = "1.1";
   slider.max = numIn.max = String(maxLev);
   slider.step = numIn.step = "0.1";
@@ -194,7 +201,7 @@ function renderSelectedAsset() {
 
   updateLeverageSlider(rs.cFactor, rs.lFactor);
 
-  const maxLev = maxLeverageFor(rs.cFactor, rs.lFactor);
+  const maxLev = maxLeverageFor(rs.cFactor, rs.lFactor, minHF());
   $("stat-cfactor").textContent    = `${(rs.cFactor * 100).toFixed(0)}%`;
   $("stat-max-lev").textContent    = `${maxLev.toFixed(2)}×`;
   $("stat-liquidity").textContent  = `${fmt(rs.available, 0)} ${rs.asset.symbol}`;
@@ -394,8 +401,8 @@ function updatePreview() {
     liquidityWarnEl.classList.add("hidden");
   }
 
-  const safe = hf >= 1.01 && selectedPool.status === 1 && liquidityOk;
-  ($("hf-warning") as HTMLElement).classList.toggle("hidden", hf >= 1.01 || selectedPool.status !== 1);
+  const safe = hf >= minHF() && selectedPool.status === 1 && liquidityOk;
+  ($("hf-warning") as HTMLElement).classList.toggle("hidden", hf >= minHF() || selectedPool.status !== 1);
   ($("open-btn") as HTMLButtonElement).disabled = !safe;
 }
 
@@ -442,7 +449,7 @@ async function openPosition() {
   const rs = reserves.find(r => r.asset.id === selectedAsset.id);
   const liveAsset = rs?.asset ?? selectedAsset;
 
-  if (hfForLeverage(leverage, liveAsset.cFactor, rs?.lFactor ?? 1) < 1.01) { toast("HF too low — reduce leverage", "error"); return; }
+  if (hfForLeverage(leverage, liveAsset.cFactor, rs?.lFactor ?? 1) < minHF()) { toast("HF too low — reduce leverage", "error"); return; }
 
   const totalBorrow   = initial * (leverage - 1);
   const firstBorrow   = Math.min(initial * liveAsset.cFactor, totalBorrow);
@@ -591,6 +598,16 @@ async function disconnect() {
 }
 
 // ── Event listeners ───────────────────────────────────────────────────────────
+
+$("expert-toggle").addEventListener("click", () => {
+  expertMode = !expertMode;
+  const btn = $("expert-toggle");
+  btn.classList.toggle("expert-active", expertMode);
+  btn.textContent = expertMode ? "Expert ON" : "Expert";
+  // Recalculate slider max and preview with new minHF
+  renderSelectedAsset();
+  updatePreview();
+});
 
 $("connect-btn").addEventListener("click",    connect);
 $("switch-wallet-btn").addEventListener("click", switchWallet);
