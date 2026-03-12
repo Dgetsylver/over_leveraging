@@ -307,12 +307,16 @@ function updatePreview() {
     $("prev-net-apr").className   = `prev-net-apr ${netApr > 0 ? "apr-great" : "apr-bad"}`;
   }
 
-  // Liquidity check: total borrow must fit within available pool liquidity
+  // Liquidity check: first borrow step must fit within pool available + what your deposit unlocks.
+  // Subsequent steps are fine because each deposit replenishes capacity.
   const totalBorrow = initial * (lev - 1);
-  const liquidityOk = !rs || totalBorrow <= rs.available;
+  const cf = rs ? rs.cFactor : selectedAsset.cFactor;
+  const firstBorrow = Math.min(initial * cf, totalBorrow);
+  const poolAvailAfterDeposit = (rs?.available ?? 0) + initial * (rs ? rs.asset.maxUtil : 0.95);
+  const liquidityOk = !rs || firstBorrow <= poolAvailAfterDeposit;
   const liquidityWarnEl = $("liquidity-warning") as HTMLElement;
   if (!liquidityOk && rs) {
-    liquidityWarnEl.textContent = `⚠ Borrow (${fmt(totalBorrow, 0)}) exceeds pool available (${fmt(rs.available, 0)} ${rs.asset.symbol}). Reduce leverage or deposit.`;
+    liquidityWarnEl.textContent = `⚠ First borrow (${fmt(firstBorrow, 0)}) exceeds pool available after deposit (${fmt(poolAvailAfterDeposit, 0)} ${rs.asset.symbol}). Reduce leverage or deposit.`;
     liquidityWarnEl.classList.remove("hidden");
   } else {
     liquidityWarnEl.classList.add("hidden");
@@ -368,9 +372,11 @@ async function openPosition() {
 
   if (hfForLeverage(leverage, liveAsset.cFactor) < 1.03) { toast("HF too low — reduce leverage", "error"); return; }
 
-  const totalBorrow = initial * (leverage - 1);
-  if (rs && totalBorrow > rs.available) {
-    toast(`Borrow (${fmt(totalBorrow, 0)}) exceeds pool available liquidity (${fmt(rs.available, 0)} ${rs.asset.symbol})`, "error");
+  const totalBorrow   = initial * (leverage - 1);
+  const firstBorrow   = Math.min(initial * liveAsset.cFactor, totalBorrow);
+  const poolAvailAfterDeposit = (rs?.available ?? 0) + initial * (rs ? rs.asset.maxUtil : 0.95);
+  if (rs && firstBorrow > poolAvailAfterDeposit) {
+    toast(`First borrow step (${fmt(firstBorrow, 0)}) exceeds pool available after deposit (${fmt(poolAvailAfterDeposit, 0)} ${rs.asset.symbol}). Reduce leverage.`, "error");
     return;
   }
 
