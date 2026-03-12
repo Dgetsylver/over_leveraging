@@ -256,8 +256,8 @@ export async function fetchAllReserves(userAddress: string): Promise<ReserveStat
       const interestSupplyApr = interestBorrowApr * util * (1 - backstopRate);
 
       // BLND emissions APR
-      const supplyEps = supplyEmissions ? BigInt(supplyEmissions.config.eps) : 0n;
-      const borrowEps = borrowEmissions ? BigInt(borrowEmissions.config.eps) : 0n;
+      const supplyEps = supplyEmissions?.eps != null ? BigInt(supplyEmissions.eps) : 0n;
+      const borrowEps = borrowEmissions?.eps != null ? BigInt(borrowEmissions.eps) : 0n;
       const totalSupplyUsd = totalSupply * priceUsd;
 
       // BLND/yr = eps × seconds_per_year / 1e7 / 1e7
