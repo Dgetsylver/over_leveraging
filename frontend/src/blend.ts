@@ -1,5 +1,5 @@
 /**
- * Blend pool interactions — CETES leverage on Etherfuse pool.
+ * Blend pool interactions — all 5 assets on the Etherfuse mainnet pool.
  */
 
 import {
@@ -16,29 +16,101 @@ import {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-export const POOL_ID  = "CDMAVJPFXPADND3YRL4BSM3AKZWCTFMX27GLLXCML3PD62HEQS5FPVAI";
-export const CETES_ID = "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV";
-export const BLND_ID  = "CD25MNVTZDL4Y3XBCPCJXGC7P7Q4BH5B7CTZSN7YXCEUN56HAQBCM7E";
-export const NETWORK  = Networks.PUBLIC;
-export const RPC_URL  = "https://mainnet.sorobanrpc.com";
+export const POOL_ID   = "CDMAVJPFXPADND3YRL4BSM3AKZWCTFMX27GLLXCML3PD62HEQS5FPVAI";
+export const ORACLE_ID = "CAVRP26CWW6IUEXBRA3Q2T2SHBUVBC2DF43M4E23LEZGW5ZEIB62HALS";
+export const BLND_ID   = "CD25MNVTZDL4Y3XBCPCJXGC7P7Q4BH5B7CTZSN7YXCEUN56HAQBCM7E";
+export const NETWORK   = Networks.PUBLIC;
+export const RPC_URL   = "https://mainnet.sorobanrpc.com";
 
-// CETES reserve index = 2 in this pool.
-// Supply emissions token id = index * 2 + 1 = 5
-// Borrow emissions token id = index * 2     = 4
-export const CETES_RESERVE_INDEX     = 2;
-export const CETES_SUPPLY_TOKEN_ID   = CETES_RESERVE_INDEX * 2 + 1; // 5
-export const CETES_BORROW_TOKEN_ID   = CETES_RESERVE_INDEX * 2;     // 4
+// Oracle: base=USD, decimals=14 → price = raw / 1e14
+const ORACLE_DEC = 1e14;
+// Token rate scale (b_rate / d_rate): 12 decimal places
+const RATE_DEC   = 1_000_000_000_000n;
+const SCALAR     = 10_000_000n;
+const SCALAR_F   = 10_000_000;
+const SECONDS_PER_YEAR = 31_536_000;
 
-const SCALAR    = 10_000_000n;
-const SCALAR_F  = 10_000_000;
-const RATE_DEC  = 1_000_000_000_000; // 12 decimals for b_rate / d_rate
-
-export const SUPPLY_COLLATERAL = 2;
+export const SUPPLY_COLLATERAL  = 2;
 export const WITHDRAW_COLLATERAL = 3;
 export const REPAY  = 5;
 export const BORROW = 4;
 
-// ── RPC server ────────────────────────────────────────────────────────────────
+// ── Asset registry ────────────────────────────────────────────────────────────
+
+export interface AssetInfo {
+  id:           string;   // contract address
+  symbol:       string;
+  name:         string;
+  decimals:     number;
+  reserveIndex: number;   // index in the pool's reserve list
+  supplyTokenId: number;  // reserve_index * 2 + 1
+  borrowTokenId: number;  // reserve_index * 2
+  cFactor:      number;   // 0..1, set after fetching
+  maxUtil:      number;   // 0..1
+}
+
+export const ASSETS: AssetInfo[] = [
+  {
+    id:           "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+    symbol:       "XLM",
+    name:         "Stellar Lumens",
+    decimals:     7,
+    reserveIndex: 0,
+    supplyTokenId: 1,
+    borrowTokenId: 0,
+    cFactor:      0.75,
+    maxUtil:      0.70,
+  },
+  {
+    id:           "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+    symbol:       "USDC",
+    name:         "USD Coin",
+    decimals:     7,
+    reserveIndex: 1,
+    supplyTokenId: 3,
+    borrowTokenId: 2,
+    cFactor:      0.95,
+    maxUtil:      0.95,
+  },
+  {
+    id:           "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV",
+    symbol:       "CETES",
+    name:         "CETES",
+    decimals:     7,
+    reserveIndex: 2,
+    supplyTokenId: 5,
+    borrowTokenId: 4,
+    cFactor:      0.80,
+    maxUtil:      0.90,
+  },
+  {
+    id:           "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR",
+    symbol:       "USTRY",
+    name:         "US Treasury",
+    decimals:     7,
+    reserveIndex: 3,
+    supplyTokenId: 7,
+    borrowTokenId: 6,
+    cFactor:      0.90,
+    maxUtil:      0.90,
+  },
+  {
+    id:           "CD6M4R2322BYCY2LNWM74PEBQAQ63SA3DUJLI3L4225U4ZVCLMSCBCIS",
+    symbol:       "TESOURO",
+    name:         "Brazilian Treasury",
+    decimals:     7,
+    reserveIndex: 4,
+    supplyTokenId: 9,
+    borrowTokenId: 8,
+    cFactor:      0.80,
+    maxUtil:      0.90,
+  },
+];
+
+export const assetBySymbol = (sym: string) => ASSETS.find(a => a.symbol === sym)!;
+export const assetById     = (id: string)  => ASSETS.find(a => a.id === id)!;
+
+// ── RPC ───────────────────────────────────────────────────────────────────────
 
 export const server = new SorobanRpc.Server(RPC_URL);
 
@@ -55,6 +127,14 @@ export function i128ToScVal(n: bigint): xdr.ScVal {
   );
 }
 
+/** Encode oracle Asset::Stellar(addr) variant. */
+function assetScVal(contractId: string): xdr.ScVal {
+  return xdr.ScVal.scvVec([
+    xdr.ScVal.scvSymbol("Stellar"),
+    new Address(contractId).toScVal(),
+  ]);
+}
+
 function buildRequest(assetId: string, amount: bigint, requestType: number): xdr.ScVal {
   return xdr.ScVal.scvMap([
     new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol("address"), val: new Address(assetId).toScVal() }),
@@ -67,6 +147,229 @@ function buildRequestsVec(items: xdr.ScVal[]): xdr.ScVal {
   return xdr.ScVal.scvVec(items);
 }
 
+// ── Simulate helper ───────────────────────────────────────────────────────────
+
+async function simulate(userAddress: string, op: xdr.Operation): Promise<any> {
+  const acc = await server.getAccount(userAddress);
+  const tx  = new TransactionBuilder(acc, { fee: BASE_FEE, networkPassphrase: NETWORK })
+    .addOperation(op).setTimeout(30).build();
+  const sim = await server.simulateTransaction(tx);
+  if (!SorobanRpc.Api.isSimulationSuccess(sim)) return null;
+  return scValToNative(sim.result!.retval);
+}
+
+// ── BLND price from CoinGecko ─────────────────────────────────────────────────
+
+let _blndPriceCache: number | null = null;
+export async function fetchBlndPrice(): Promise<number> {
+  if (_blndPriceCache !== null) return _blndPriceCache;
+  try {
+    const res  = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=blend-2&vs_currencies=usd");
+    const data = await res.json() as any;
+    _blndPriceCache = data["blend-2"]?.usd ?? 0;
+    return _blndPriceCache;
+  } catch {
+    return 0;
+  }
+}
+
+// ── Per-asset pool data ───────────────────────────────────────────────────────
+
+export interface ReserveStats {
+  asset:         AssetInfo;
+  cFactor:       number;
+  priceUsd:      number;   // oracle price per 1 full token
+  totalSupply:   number;   // full tokens
+  totalBorrow:   number;
+  available:     number;   // available to borrow
+  bRate:         bigint;
+  dRate:         bigint;
+  interestBorrowApr: number; // % pa — interest rate model
+  interestSupplyApr: number; // % pa — after backstop take
+  blndSupplyApr:     number; // % pa — BLND emissions on supply side
+  blndBorrowApr:     number; // % pa — BLND emissions on borrow side (currently 0)
+  netSupplyApr:      number; // interest + blnd
+  netBorrowCost:     number; // interest - blnd (usually just interest)
+  supplyEps:         bigint; // raw eps from pool, 0 if no emissions
+  borrowEps:         bigint;
+}
+
+export async function fetchAllReserves(userAddress: string): Promise<ReserveStats[]> {
+  const pool   = new Contract(POOL_ID);
+  const oracle = new Contract(ORACLE_ID);
+  const blndPrice = await fetchBlndPrice();
+
+  return Promise.all(
+    ASSETS.map(async (asset): Promise<ReserveStats> => {
+      // Reserve data
+      const reserveRaw = await simulate(userAddress,
+        pool.call("get_reserve", new Address(asset.id).toScVal())
+      );
+      // Oracle price (USD, 14 decimals)
+      const priceRaw = await simulate(userAddress,
+        oracle.call("lastprice", assetScVal(asset.id))
+      );
+      // Supply emissions
+      const supplyEmissions = await simulate(userAddress,
+        pool.call("get_reserve_emissions", nativeToScVal(asset.supplyTokenId, { type: "u32" }))
+      );
+      // Borrow emissions
+      const borrowEmissions = await simulate(userAddress,
+        pool.call("get_reserve_emissions", nativeToScVal(asset.borrowTokenId, { type: "u32" }))
+      );
+
+      const priceUsd = priceRaw ? Number(BigInt(priceRaw.price)) / ORACLE_DEC : 0;
+
+      const bRate    = reserveRaw ? BigInt(reserveRaw.data.b_rate) : RATE_DEC;
+      const dRate    = reserveRaw ? BigInt(reserveRaw.data.d_rate) : RATE_DEC;
+      const bSupply  = reserveRaw ? BigInt(reserveRaw.data.b_supply) : 0n;
+      const dSupply  = reserveRaw ? BigInt(reserveRaw.data.d_supply) : 0n;
+
+      const totalSupply  = Number(bSupply * bRate / RATE_DEC) / SCALAR_F;
+      const totalBorrow  = Number(dSupply * dRate / RATE_DEC) / SCALAR_F;
+      const maxUtilActual = reserveRaw ? reserveRaw.config.max_util / SCALAR_F : asset.maxUtil;
+      const available    = Math.max(0, totalSupply * maxUtilActual - totalBorrow);
+      const cFactor      = reserveRaw ? reserveRaw.config.c_factor / SCALAR_F : asset.cFactor;
+
+      // Interest APR from rate model
+      const util     = totalSupply > 0 ? totalBorrow / totalSupply : 0;
+      const rBase    = reserveRaw ? reserveRaw.config.r_base / SCALAR_F : 0.01;
+      const rOne     = reserveRaw ? reserveRaw.config.r_one  / SCALAR_F : 0.05;
+      const rTwo     = reserveRaw ? reserveRaw.config.r_two  / SCALAR_F : 0.10;
+      const utilOpt  = reserveRaw ? reserveRaw.config.util   / SCALAR_F : 0.50;
+      const rThree   = reserveRaw ? reserveRaw.config.r_three / SCALAR_F : 5.0;
+      const backstopRate = 0.10; // 10% backstop take rate approximation
+
+      let interestBorrowApr: number;
+      if (util <= utilOpt) {
+        interestBorrowApr = (rBase + rOne * (util / utilOpt)) * 100;
+      } else {
+        const excess = (util - utilOpt) / (1 - utilOpt);
+        interestBorrowApr = (rBase + rOne + (rTwo - rOne) * excess + rThree * Math.max(0, excess - 1)) * 100;
+      }
+      // Supply APR ≈ borrow APR × utilization × (1 - backstop_take)
+      const interestSupplyApr = interestBorrowApr * util * (1 - backstopRate);
+
+      // BLND emissions APR
+      const supplyEps = supplyEmissions ? BigInt(supplyEmissions.config.eps) : 0n;
+      const borrowEps = borrowEmissions ? BigInt(borrowEmissions.config.eps) : 0n;
+      const totalSupplyUsd = totalSupply * priceUsd;
+
+      // BLND/yr = eps × seconds_per_year / 1e7 / 1e7
+      const supplyBlndYr = Number(supplyEps) * SECONDS_PER_YEAR / SCALAR_F / SCALAR_F;
+      const borrowBlndYr = Number(borrowEps) * SECONDS_PER_YEAR / SCALAR_F / SCALAR_F;
+
+      const blndSupplyApr = totalSupplyUsd > 0
+        ? (supplyBlndYr * blndPrice / totalSupplyUsd) * 100
+        : 0;
+      const totalBorrowUsd = totalBorrow * priceUsd;
+      const blndBorrowApr  = totalBorrowUsd > 0
+        ? (borrowBlndYr * blndPrice / totalBorrowUsd) * 100
+        : 0;
+
+      return {
+        asset: { ...asset, cFactor, maxUtil: maxUtilActual },
+        cFactor,
+        priceUsd,
+        totalSupply,
+        totalBorrow,
+        available,
+        bRate,
+        dRate,
+        interestBorrowApr,
+        interestSupplyApr,
+        blndSupplyApr,
+        blndBorrowApr,
+        netSupplyApr:  interestSupplyApr + blndSupplyApr,
+        netBorrowCost: interestBorrowApr - blndBorrowApr,
+        supplyEps,
+        borrowEps,
+      };
+    })
+  );
+}
+
+// ── User position ─────────────────────────────────────────────────────────────
+
+export interface AssetPosition {
+  asset:        AssetInfo;
+  bTokens:      bigint;
+  dTokens:      bigint;
+  collateral:   number; // full tokens
+  debt:         number;
+  equity:       number;
+  leverage:     number;
+  hf:           number;
+}
+
+export interface UserPositions {
+  byAsset: Map<string, AssetPosition>; // keyed by asset.id
+}
+
+export async function fetchUserPositions(
+  userAddress: string,
+  reserves: ReserveStats[],
+): Promise<UserPositions> {
+  const pool = new Contract(POOL_ID);
+  const raw  = await simulate(userAddress,
+    pool.call("get_positions", new Address(userAddress).toScVal())
+  );
+
+  const byAsset = new Map<string, AssetPosition>();
+  for (const rs of reserves) {
+    const bTokens = BigInt(raw?.collateral?.[rs.asset.reserveIndex] ?? 0);
+    const dTokens = BigInt(raw?.liabilities?.[rs.asset.reserveIndex] ?? 0);
+    if (bTokens === 0n && dTokens === 0n) continue;
+
+    const collateral = Number(bTokens * rs.bRate / RATE_DEC) / SCALAR_F;
+    const debt       = Number(dTokens * rs.dRate / RATE_DEC) / SCALAR_F;
+    const equity     = collateral - debt;
+    const leverage   = equity > 0 ? collateral / equity : 0;
+    const hf         = debt > 0 ? (collateral * rs.cFactor) / debt : Infinity;
+
+    byAsset.set(rs.asset.id, {
+      asset: rs.asset,
+      bTokens,
+      dTokens,
+      collateral,
+      debt,
+      equity,
+      leverage,
+      hf,
+    });
+  }
+  return { byAsset };
+}
+
+export async function fetchAssetBalance(userAddress: string, assetId: string): Promise<number> {
+  const token = new Contract(assetId);
+  const raw   = await simulate(userAddress,
+    token.call("balance", new Address(userAddress).toScVal())
+  );
+  if (raw === null) return 0;
+  const stroops = typeof raw === "bigint" ? raw : BigInt(raw as any);
+  return Number(stroops) / SCALAR_F;
+}
+
+export async function fetchPendingBlnd(
+  userAddress: string,
+  asset: AssetInfo,
+): Promise<number> {
+  const pool = new Contract(POOL_ID);
+  let total  = 0;
+  for (const tokenId of [asset.supplyTokenId, asset.borrowTokenId]) {
+    const raw = await simulate(userAddress,
+      pool.call(
+        "get_user_emissions",
+        new Address(userAddress).toScVal(),
+        nativeToScVal(tokenId, { type: "u32" }),
+      )
+    );
+    if (raw?.accrued) total += Number(BigInt(raw.accrued)) / SCALAR_F;
+  }
+  return total;
+}
+
 // ── Leverage math ─────────────────────────────────────────────────────────────
 
 export function leverageAt(loops: number, c: number): number {
@@ -74,307 +377,159 @@ export function leverageAt(loops: number, c: number): number {
 }
 
 export function hfAt(loops: number, c: number): number {
-  // HF = (1 - c^(n+1)) / (1 - c^n)
   return (1 - Math.pow(c, loops + 1)) / (1 - Math.pow(c, loops));
 }
 
-/** Build n borrows + (n+1) supplies request list for opening a position. */
-function buildOpenRequests(initialStroops: bigint, cFactor: bigint, n: number): xdr.ScVal[] {
+function buildOpenRequests(
+  assetId: string,
+  initialStroops: bigint,
+  cFactor: bigint,
+  n: number,
+): xdr.ScVal[] {
   const items: xdr.ScVal[] = [];
   let balance = initialStroops;
   for (let i = 0; i < n; i++) {
     const supply = balance;
     const borrow = supply * cFactor / SCALAR;
-    items.push(buildRequest(CETES_ID, supply, SUPPLY_COLLATERAL));
-    items.push(buildRequest(CETES_ID, borrow, BORROW));
+    items.push(buildRequest(assetId, supply, SUPPLY_COLLATERAL));
+    items.push(buildRequest(assetId, borrow, BORROW));
     balance = borrow;
   }
-  items.push(buildRequest(CETES_ID, balance, SUPPLY_COLLATERAL));
+  items.push(buildRequest(assetId, balance, SUPPLY_COLLATERAL));
   return items;
 }
 
-/** Build close-all requests: one WITHDRAW_COLLATERAL (max) + one REPAY (max).
- *  Blend caps both at the actual balance so large values are safe. */
-function buildCloseRequests(collateralStroops: bigint, debtStroops: bigint): xdr.ScVal[] {
-  // Add 0.1% buffer to debt to cover interest that accrues between read and submit
-  const debtWithBuffer = debtStroops * 1001n / 1000n;
-  return [
-    buildRequest(CETES_ID, collateralStroops, WITHDRAW_COLLATERAL),
-    buildRequest(CETES_ID, debtWithBuffer, REPAY),
-  ];
-}
+// ── Transaction builders ──────────────────────────────────────────────────────
 
-// ── Pool data ─────────────────────────────────────────────────────────────────
-
-export interface PoolStats {
-  cFactor:      bigint;
-  cFactorPct:   number;
-  availableUsdc: number; // CETES available to borrow
-  supplyApr:    number;
-  borrowApr:    number;
-}
-
-export async function fetchPoolStats(address: string): Promise<PoolStats> {
-  const pool = new Contract(POOL_ID);
-  const acc  = await server.getAccount(address);
-  const tx = new TransactionBuilder(acc, { fee: BASE_FEE, networkPassphrase: NETWORK })
-    .addOperation(pool.call("get_reserve", new Address(CETES_ID).toScVal()))
-    .setTimeout(30).build();
-  const sim = await server.simulateTransaction(tx);
-  if (!SorobanRpc.Api.isSimulationSuccess(sim)) throw new Error("get_reserve simulation failed");
-  const raw: any = scValToNative(sim.result!.retval);
-  const cFactor = BigInt(raw.config.c_factor);
-  const bRate = BigInt(raw.data.b_rate);
-  const dRate = BigInt(raw.data.d_rate);
-  const bSupply = BigInt(raw.data.b_supply);
-  const dSupply = BigInt(raw.data.d_supply);
-  const maxUtil = raw.config.max_util as number;
-
-  const totalSupplied = Number(bSupply * bRate / BigInt(RATE_DEC)) / SCALAR_F;
-  const totalBorrowed = Number(dSupply * dRate / BigInt(RATE_DEC)) / SCALAR_F;
-  const available = totalSupplied * (maxUtil / SCALAR_F) - totalBorrowed;
-
-  // Simple APR from interest rate model (annualised rate approximation)
-  const util = raw.config.util / SCALAR_F;
-  const rBase = raw.config.r_base / SCALAR_F;
-  const rOne  = raw.config.r_one  / SCALAR_F;
-  const borrowApr = (rBase + rOne * Math.min(util, 1)) * 100;
-  const supplyApr = borrowApr * util * (1 - 0.1); // rough supply APR after backstop take
-
-  return {
-    cFactor,
-    cFactorPct: Number(cFactor) / SCALAR_F * 100,
-    availableUsdc: Math.max(0, available),
-    supplyApr,
-    borrowApr,
-  };
-}
-
-export interface Position {
-  collateralBtokens: bigint;
-  debtDtokens:       bigint;
-  collateralCetes:   number; // real CETES
-  debtCetes:         number;
-  equity:            number;
-  leverage:          number;
-  hf:                number;
-}
-
-export async function fetchPosition(userAddress: string): Promise<Position | null> {
-  const pool = new Contract(POOL_ID);
-  const acc  = await server.getAccount(userAddress);
-
-  // get_positions
-  const posTx = new TransactionBuilder(acc, { fee: BASE_FEE, networkPassphrase: NETWORK })
-    .addOperation(pool.call("get_positions", new Address(userAddress).toScVal()))
-    .setTimeout(30).build();
-  const posSim = await server.simulateTransaction(posTx);
-  if (!SorobanRpc.Api.isSimulationSuccess(posSim)) return null;
-  const posRaw: any = scValToNative(posSim.result!.retval);
-
-  const bTokens = BigInt(posRaw.collateral?.[CETES_RESERVE_INDEX] ?? 0);
-  const dTokens = BigInt(posRaw.liabilities?.[CETES_RESERVE_INDEX] ?? 0);
-  if (bTokens === 0n && dTokens === 0n) return null;
-
-  // get current rates
-  const resTx = new TransactionBuilder(acc, { fee: BASE_FEE, networkPassphrase: NETWORK })
-    .addOperation(pool.call("get_reserve", new Address(CETES_ID).toScVal()))
-    .setTimeout(30).build();
-  const resSim = await server.simulateTransaction(resTx);
-  if (!SorobanRpc.Api.isSimulationSuccess(resSim)) return null;
-  const resRaw: any = scValToNative(resSim.result!.retval);
-
-  const bRate = BigInt(resRaw.data.b_rate);
-  const dRate = BigInt(resRaw.data.d_rate);
-  const cFactor = Number(resRaw.config.c_factor) / SCALAR_F;
-
-  const collateralStroops = bTokens * bRate / BigInt(RATE_DEC);
-  const debtStroops       = dTokens * dRate / BigInt(RATE_DEC);
-  const collateralCetes   = Number(collateralStroops) / SCALAR_F;
-  const debtCetes         = Number(debtStroops) / SCALAR_F;
-  const equity            = collateralCetes - debtCetes;
-  const leverage          = equity > 0 ? collateralCetes / equity : 0;
-  const hf                = debtCetes > 0 ? (collateralCetes * cFactor) / debtCetes : 999;
-
-  return { collateralBtokens: bTokens, debtDtokens: dTokens, collateralCetes, debtCetes, equity, leverage, hf };
-}
-
-export async function fetchCetesBalance(userAddress: string): Promise<number> {
-  const cetes = new Contract(CETES_ID);
-  const acc   = await server.getAccount(userAddress);
-  const tx = new TransactionBuilder(acc, { fee: BASE_FEE, networkPassphrase: NETWORK })
-    .addOperation(cetes.call("balance", new Address(userAddress).toScVal()))
-    .setTimeout(30).build();
-  const sim = await server.simulateTransaction(tx);
-  if (!SorobanRpc.Api.isSimulationSuccess(sim)) return 0;
-  const raw = scValToNative(sim.result!.retval);
-  const stroops = typeof raw === "bigint" ? raw : BigInt(raw as any);
-  return Number(stroops) / SCALAR_F;
-}
-
-export async function fetchPendingBlnd(userAddress: string): Promise<number> {
-  const pool = new Contract(POOL_ID);
-  const acc  = await server.getAccount(userAddress);
-
-  let total = 0;
-  for (const tokenId of [CETES_SUPPLY_TOKEN_ID, CETES_BORROW_TOKEN_ID]) {
-    const tx = new TransactionBuilder(acc, { fee: BASE_FEE, networkPassphrase: NETWORK })
-      .addOperation(pool.call(
-        "get_user_emissions",
-        new Address(userAddress).toScVal(),
-        nativeToScVal(tokenId, { type: "u32" }),
-      ))
-      .setTimeout(30).build();
-    const sim = await server.simulateTransaction(tx);
-    if (!SorobanRpc.Api.isSimulationSuccess(sim)) continue;
-    const raw: any = scValToNative(sim.result!.retval);
-    // accrued field is in BLND stroops (1e7)
-    if (raw?.accrued) total += Number(BigInt(raw.accrued)) / SCALAR_F;
-  }
-  return total;
-}
-
-// ── Transaction builders (unsigned XDR) ──────────────────────────────────────
-
-export async function buildApproveXdr(userAddress: string, amountStroops: bigint): Promise<string> {
-  const cetes     = new Contract(CETES_ID);
+export async function buildApproveXdr(
+  userAddress: string,
+  assetId: string,
+  amountStroops: bigint,
+): Promise<string> {
+  const token     = new Contract(assetId);
   const addrScVal = new Address(userAddress).toScVal();
   const poolScVal = new Address(POOL_ID).toScVal();
   const ledger    = await server.getLatestLedger();
-  const expiry    = ledger.sequence + 120; // ~10 min
+  const expiry    = ledger.sequence + 120;
 
   const acc = await server.getAccount(userAddress);
-  const tx = new TransactionBuilder(acc, {
+  const tx  = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
     networkPassphrase: NETWORK,
   })
-    .addOperation(cetes.call(
+    .addOperation(token.call(
       "approve",
       addrScVal,
       poolScVal,
       i128ToScVal(amountStroops),
       nativeToScVal(expiry, { type: "u32" }),
     ))
-    .setTimeout(60)
-    .build();
+    .setTimeout(60).build();
 
   const sim = await server.simulateTransaction(tx);
-  if (!SorobanRpc.Api.isSimulationSuccess(sim)) {
-    const err = sim as SorobanRpc.Api.SimulateTransactionErrorResponse;
-    throw new Error(`Approve simulation failed: ${err.error}`);
-  }
+  if (!SorobanRpc.Api.isSimulationSuccess(sim))
+    throw new Error(`Approve simulation failed: ${(sim as SorobanRpc.Api.SimulateTransactionErrorResponse).error}`);
   return SorobanRpc.assembleTransaction(tx, sim).build().toXDR();
 }
 
 export async function buildOpenPositionXdr(
   userAddress: string,
+  asset: AssetInfo,
   initialStroops: bigint,
-  cFactor: bigint,
   loops: number,
 ): Promise<string> {
+  const cFactorBn = BigInt(Math.round(asset.cFactor * SCALAR_F));
   const pool      = new Contract(POOL_ID);
   const addrScVal = new Address(userAddress).toScVal();
-  const requests  = buildRequestsVec(buildOpenRequests(initialStroops, cFactor, loops));
+  const requests  = buildRequestsVec(buildOpenRequests(asset.id, initialStroops, cFactorBn, loops));
 
   const acc = await server.getAccount(userAddress);
-  const tx = new TransactionBuilder(acc, {
+  const tx  = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
     networkPassphrase: NETWORK,
   })
     .addOperation(pool.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
-    .setTimeout(60)
-    .build();
+    .setTimeout(60).build();
 
   const sim = await server.simulateTransaction(tx);
-  if (!SorobanRpc.Api.isSimulationSuccess(sim)) {
-    const err = sim as SorobanRpc.Api.SimulateTransactionErrorResponse;
-    throw new Error(`Open position simulation failed: ${err.error}`);
-  }
+  if (!SorobanRpc.Api.isSimulationSuccess(sim))
+    throw new Error(`Open position simulation failed: ${(sim as SorobanRpc.Api.SimulateTransactionErrorResponse).error}`);
   return SorobanRpc.assembleTransaction(tx, sim).build().toXDR();
 }
 
 export async function buildClosePositionXdr(
   userAddress: string,
-  position: Position,
+  pos: AssetPosition,
 ): Promise<{ approveXdr: string; submitXdr: string }> {
+  // Approve a 1% buffer in case interest has accrued between read and submit
+  const netDebitBuf = BigInt(Math.ceil(pos.debt * SCALAR_F * 0.01));
+  const approveXdr  = await buildApproveXdr(userAddress, pos.asset.id, netDebitBuf);
+
+  // WITHDRAW all collateral (b-tokens → actual CETES), REPAY all debt + 0.5% buffer
+  const debtWithBuf = BigInt(Math.ceil(pos.debt * SCALAR_F * 1.005));
+  const requests    = buildRequestsVec([
+    buildRequest(pos.asset.id, pos.bTokens, WITHDRAW_COLLATERAL),
+    buildRequest(pos.asset.id, debtWithBuf, REPAY),
+  ]);
+
   const pool      = new Contract(POOL_ID);
   const addrScVal = new Address(userAddress).toScVal();
-
-  // Convert token balances to CETES stroops with 0.5% buffer for accrued interest
-  const collateralStroops = position.collateralBtokens;
-  const debtStroops = BigInt(Math.ceil(position.debtCetes * SCALAR_F * 1.005));
-
-  // Approve enough for net debit (if any — should be near 0 but buffers for interest)
-  const netDebitBuffer = BigInt(Math.ceil(position.debtCetes * SCALAR_F * 0.01)); // 1% buffer
-  const approveXdr = await buildApproveXdr(userAddress, netDebitBuffer);
-
-  const requests  = buildRequestsVec(buildCloseRequests(collateralStroops, debtStroops));
-
-  const acc = await server.getAccount(userAddress);
-  const tx = new TransactionBuilder(acc, {
+  const acc       = await server.getAccount(userAddress);
+  const tx        = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
     networkPassphrase: NETWORK,
   })
     .addOperation(pool.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
-    .setTimeout(60)
-    .build();
+    .setTimeout(60).build();
 
   const sim = await server.simulateTransaction(tx);
-  if (!SorobanRpc.Api.isSimulationSuccess(sim)) {
-    const err = sim as SorobanRpc.Api.SimulateTransactionErrorResponse;
-    throw new Error(`Close position simulation failed: ${err.error}`);
-  }
+  if (!SorobanRpc.Api.isSimulationSuccess(sim))
+    throw new Error(`Close simulation failed: ${(sim as SorobanRpc.Api.SimulateTransactionErrorResponse).error}`);
   return {
     approveXdr,
     submitXdr: SorobanRpc.assembleTransaction(tx, sim).build().toXDR(),
   };
 }
 
-export async function buildClaimXdr(userAddress: string): Promise<string> {
+export async function buildClaimXdr(
+  userAddress: string,
+  asset: AssetInfo,
+): Promise<string> {
   const pool      = new Contract(POOL_ID);
   const addrScVal = new Address(userAddress).toScVal();
   const tokenIds  = xdr.ScVal.scvVec([
-    nativeToScVal(CETES_SUPPLY_TOKEN_ID, { type: "u32" }),
-    nativeToScVal(CETES_BORROW_TOKEN_ID, { type: "u32" }),
+    nativeToScVal(asset.supplyTokenId, { type: "u32" }),
+    nativeToScVal(asset.borrowTokenId, { type: "u32" }),
   ]);
 
   const acc = await server.getAccount(userAddress);
-  const tx = new TransactionBuilder(acc, {
+  const tx  = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
     networkPassphrase: NETWORK,
   })
     .addOperation(pool.call("claim", addrScVal, tokenIds, addrScVal))
-    .setTimeout(60)
-    .build();
+    .setTimeout(60).build();
 
   const sim = await server.simulateTransaction(tx);
-  if (!SorobanRpc.Api.isSimulationSuccess(sim)) {
-    const err = sim as SorobanRpc.Api.SimulateTransactionErrorResponse;
-    throw new Error(`Claim simulation failed: ${err.error}`);
-  }
+  if (!SorobanRpc.Api.isSimulationSuccess(sim))
+    throw new Error(`Claim simulation failed: ${(sim as SorobanRpc.Api.SimulateTransactionErrorResponse).error}`);
   return SorobanRpc.assembleTransaction(tx, sim).build().toXDR();
 }
 
 // ── Submit signed XDR ─────────────────────────────────────────────────────────
 
 export async function submitSignedXdr(signedXdr: string): Promise<string> {
-  const tx = TransactionBuilder.fromXDR(signedXdr, NETWORK);
+  const tx     = TransactionBuilder.fromXDR(signedXdr, NETWORK);
   const result = await server.sendTransaction(tx);
+  if (result.status === "ERROR")
+    throw new Error(`Send failed: ${result.errorResult?.toXDR("base64")}`);
 
-  if (result.status === "ERROR") {
-    throw new Error(`Transaction failed: ${result.errorResult?.toXDR("base64")}`);
-  }
-
-  // Poll for confirmation
-  let status = result.status;
   for (let i = 0; i < 30; i++) {
     await new Promise(r => setTimeout(r, 3000));
     const poll = await server.getTransaction(result.hash);
     if (poll.status === "SUCCESS") return result.hash;
-    if (poll.status === "FAILED") {
-      throw new Error(`Transaction failed on-chain: ${poll.resultXdr?.toXDR("base64")}`);
-    }
-    status = poll.status as any;
+    if (poll.status === "FAILED")
+      throw new Error(`On-chain failure: ${poll.resultXdr?.toXDR("base64")}`);
   }
-  throw new Error("Transaction confirmation timed out");
+  throw new Error("Confirmation timed out");
 }

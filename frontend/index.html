@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Blend CETES Leverage</title>
+  <title>Blend Leverage · Etherfuse Pool</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -11,12 +11,13 @@
 </head>
 <body>
   <div id="app">
+
     <!-- Header -->
     <header>
       <div class="header-left">
         <div class="logo">
           <span class="logo-icon">⬡</span>
-          <span class="logo-text">CETES Leverage</span>
+          <span class="logo-text">Blend Leverage</span>
         </div>
         <div class="pool-badge">
           <span class="badge-label">Pool</span>
@@ -28,153 +29,182 @@
         <div id="wallet-connected" class="wallet-connected hidden">
           <div class="wallet-info">
             <span class="wallet-dot"></span>
-            <span id="wallet-address" class="wallet-address mono"></span>
+            <span id="wallet-address" class="mono"></span>
           </div>
           <button id="disconnect-btn" class="btn btn-ghost btn-sm">Disconnect</button>
         </div>
       </div>
     </header>
 
-    <!-- Main content -->
     <main>
-      <!-- Pool stats bar -->
-      <div class="stats-bar" id="pool-stats">
-        <div class="stat">
-          <span class="stat-label">CETES c_factor</span>
-          <span class="stat-value" id="stat-cfactor">80%</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Max leverage</span>
-          <span class="stat-value" id="stat-max-lev">5.00×</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Pool liquidity</span>
-          <span class="stat-value" id="stat-liquidity">—</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Borrow APR</span>
-          <span class="stat-value" id="stat-borrow-apr">—</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Supply APR</span>
-          <span class="stat-value" id="stat-supply-apr">—</span>
-        </div>
-      </div>
 
       <!-- Connect prompt -->
       <div id="connect-prompt" class="connect-prompt">
-        <div class="connect-prompt-icon">🔗</div>
+        <div class="connect-prompt-icon">⬡</div>
         <h2>Connect your wallet</h2>
-        <p>Connect a Stellar wallet to manage your CETES leverage position on Blend Protocol.</p>
+        <p>Connect a Stellar wallet to manage leverage positions on Blend Protocol's Etherfuse pool.</p>
         <button class="btn btn-primary btn-lg" onclick="document.getElementById('connect-btn').click()">Connect Wallet</button>
       </div>
 
-      <!-- Dashboard (shown when connected) -->
-      <div id="dashboard" class="dashboard hidden">
+      <!-- Dashboard -->
+      <div id="dashboard" class="hidden">
 
-        <!-- Current position -->
-        <section class="card" id="position-card">
-          <div class="card-header">
-            <h2>Your Position</h2>
-            <button id="refresh-btn" class="btn btn-ghost btn-sm" title="Refresh">↻ Refresh</button>
-          </div>
-          <div id="no-position" class="empty-state">
-            <p>No active position. Open one below.</p>
-          </div>
-          <div id="position-data" class="hidden">
-            <div class="position-grid">
-              <div class="position-metric">
-                <span class="metric-label">Collateral</span>
-                <span class="metric-value" id="pos-collateral">—</span>
-                <span class="metric-unit">CETES</span>
-              </div>
-              <div class="position-metric">
-                <span class="metric-label">Debt</span>
-                <span class="metric-value" id="pos-debt">—</span>
-                <span class="metric-unit">CETES</span>
-              </div>
-              <div class="position-metric">
-                <span class="metric-label">Net equity</span>
-                <span class="metric-value" id="pos-equity">—</span>
-                <span class="metric-unit">CETES</span>
-              </div>
-              <div class="position-metric">
-                <span class="metric-label">Leverage</span>
-                <span class="metric-value" id="pos-leverage">—</span>
-                <span class="metric-unit">×</span>
-              </div>
-              <div class="position-metric hf-metric">
-                <span class="metric-label">Health Factor</span>
-                <span class="metric-value" id="pos-hf">—</span>
-                <div class="hf-bar-wrap"><div class="hf-bar" id="hf-bar"></div></div>
-              </div>
-              <div class="position-metric">
-                <span class="metric-label">Pending BLND</span>
-                <span class="metric-value" id="pos-blnd">—</span>
-                <span class="metric-unit">BLND</span>
-              </div>
-            </div>
-            <div class="position-actions">
-              <button id="close-btn" class="btn btn-danger">Close Position</button>
-              <button id="claim-btn" class="btn btn-secondary">Claim BLND</button>
-            </div>
-          </div>
-        </section>
+        <!-- Asset tabs -->
+        <div class="asset-tabs-wrap">
+          <div id="asset-tabs" class="asset-tabs"></div>
+        </div>
 
-        <!-- Open position -->
-        <section class="card" id="open-card">
-          <div class="card-header">
-            <h2>Open Leverage Position</h2>
+        <!-- Pool stats bar -->
+        <div class="stats-bar">
+          <div class="stat">
+            <span class="stat-label">c_factor</span>
+            <span class="stat-value" id="stat-cfactor">—</span>
           </div>
-          <div class="form-group">
-            <label for="initial-input">Initial CETES deposit</label>
-            <div class="input-wrap">
-              <input type="number" id="initial-input" class="input mono" placeholder="1000" min="0" step="0.0000001" value="1000" />
-              <span class="input-suffix">CETES</span>
-            </div>
-            <span class="balance-hint">Balance: <span id="cetes-balance">—</span> CETES</span>
+          <div class="stat">
+            <span class="stat-label">Max leverage</span>
+            <span class="stat-value" id="stat-max-lev">—</span>
           </div>
-          <div class="form-group">
-            <label>Loops <span class="tooltip" title="Each loop = one supply+borrow pair. More loops = higher leverage but lower HF.">?</span></label>
-            <div class="slider-row">
-              <input type="range" id="loops-slider" min="1" max="10" value="7" class="slider" />
-              <span class="slider-value mono" id="loops-display">7</span>
-            </div>
-            <div class="leverage-preview" id="leverage-preview">
-              <div class="preview-item">
-                <span>Leverage</span>
-                <strong id="prev-lev">4.02×</strong>
-              </div>
-              <div class="preview-item">
-                <span>Health Factor</span>
-                <strong id="prev-hf" class="hf-ok">1.053</strong>
-              </div>
-              <div class="preview-item">
-                <span>Total supply</span>
-                <strong id="prev-supply">4,020 CETES</strong>
-              </div>
-              <div class="preview-item">
-                <span>Total borrow</span>
-                <strong id="prev-borrow">3,020 CETES</strong>
-              </div>
-            </div>
-            <p class="hf-warning hidden" id="hf-warning">
-              ⚠ HF below 1.03 — liquidation risk. Use fewer loops.
-            </p>
+          <div class="stat">
+            <span class="stat-label">Available</span>
+            <span class="stat-value" id="stat-liquidity">—</span>
           </div>
-          <button id="open-btn" class="btn btn-primary btn-lg">Open Position</button>
-          <p class="disclaimer">
-            Two transactions will be requested: (1) approve CETES spending, (2) execute leverage loop via <code>submit_with_allowance</code>.
-          </p>
-        </section>
-      </div>
+          <div class="stat">
+            <span class="stat-label">Oracle price</span>
+            <span class="stat-value" id="stat-price">—</span>
+          </div>
+        </div>
 
-      <!-- Transaction status toast -->
+        <!-- APR breakdown card -->
+        <div class="card apr-card">
+          <div class="apr-side">
+            <div class="apr-side-label">Supply</div>
+            <div class="apr-row">
+              <span class="apr-key">Interest APR</span>
+              <span class="apr-val" id="supply-interest-apr">—</span>
+            </div>
+            <div class="apr-row">
+              <span class="apr-key">BLND emissions</span>
+              <span class="apr-val apr-blnd" id="supply-blnd-apr">—</span>
+            </div>
+            <div class="apr-row apr-net-row">
+              <span class="apr-key">Net supply APR</span>
+              <span class="apr-val" id="supply-net-apr">—</span>
+            </div>
+          </div>
+          <div class="apr-divider"></div>
+          <div class="apr-side">
+            <div class="apr-side-label">Borrow</div>
+            <div class="apr-row">
+              <span class="apr-key">Interest cost</span>
+              <span class="apr-val" id="borrow-interest-apr">—</span>
+            </div>
+            <div class="apr-row">
+              <span class="apr-key">BLND emissions</span>
+              <span class="apr-val apr-blnd" id="borrow-blnd-apr">—</span>
+            </div>
+            <div class="apr-row apr-net-row">
+              <span class="apr-key">Net borrow cost</span>
+              <span class="apr-val" id="borrow-net-cost">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="two-col">
+
+          <!-- Current position -->
+          <section class="card">
+            <div class="card-header">
+              <h2>Your Position</h2>
+              <button id="refresh-btn" class="btn btn-ghost btn-sm">↻</button>
+            </div>
+            <div id="no-position" class="empty-state">No active position for this asset.</div>
+            <div id="position-data" class="hidden">
+              <div class="position-grid">
+                <div class="position-metric">
+                  <span class="metric-label">Collateral</span>
+                  <span class="metric-value mono" id="pos-collateral">—</span>
+                </div>
+                <div class="position-metric">
+                  <span class="metric-label">Debt</span>
+                  <span class="metric-value mono" id="pos-debt">—</span>
+                </div>
+                <div class="position-metric">
+                  <span class="metric-label">Net equity</span>
+                  <span class="metric-value mono" id="pos-equity">—</span>
+                </div>
+                <div class="position-metric">
+                  <span class="metric-label">Leverage</span>
+                  <span class="metric-value mono" id="pos-leverage">—</span>
+                </div>
+                <div class="position-metric">
+                  <span class="metric-label">Health Factor</span>
+                  <span class="metric-value" id="pos-hf">—</span>
+                  <div class="hf-bar-wrap"><div class="hf-bar" id="hf-bar"></div></div>
+                </div>
+                <div class="position-metric">
+                  <span class="metric-label">Pending BLND</span>
+                  <span class="metric-value mono" id="pos-blnd">—</span>
+                </div>
+              </div>
+              <div class="position-actions">
+                <button id="close-btn" class="btn btn-danger" disabled>Close Position</button>
+                <button id="claim-btn" class="btn btn-secondary" disabled>Claim BLND</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Open position -->
+          <section class="card">
+            <div class="card-header">
+              <h2>Open Position</h2>
+            </div>
+            <div class="form-group">
+              <label>Initial deposit</label>
+              <div class="input-wrap">
+                <input type="number" id="initial-input" class="input mono" placeholder="1000" min="0" step="any" value="1000" />
+                <span class="input-suffix" id="asset-symbol-suffix">—</span>
+              </div>
+              <span class="balance-hint">Wallet: <span id="asset-balance">—</span></span>
+            </div>
+            <div class="form-group">
+              <label>Loops <span class="tooltip" title="More loops = higher leverage, lower Health Factor">?</span></label>
+              <div class="slider-row">
+                <input type="range" id="loops-slider" min="1" max="13" value="7" class="slider" />
+                <span id="loops-display" class="slider-value mono">7</span>
+              </div>
+              <div class="leverage-preview">
+                <div class="preview-row">
+                  <span>Leverage</span><strong id="prev-lev">—</strong>
+                </div>
+                <div class="preview-row">
+                  <span>Health Factor</span><strong id="prev-hf">—</strong>
+                </div>
+                <div class="preview-row">
+                  <span>Total supply</span><strong id="prev-supply">—</strong>
+                </div>
+                <div class="preview-row">
+                  <span>Total borrow</span><strong id="prev-borrow">—</strong>
+                </div>
+                <div class="preview-row preview-net-apr">
+                  <span>Est. net APR</span><strong id="prev-net-apr" class="prev-net-apr">—</strong>
+                </div>
+              </div>
+              <p class="hf-warning hidden" id="hf-warning">⚠ HF below 1.03 — liquidation risk. Use fewer loops.</p>
+            </div>
+            <button id="open-btn" class="btn btn-primary btn-lg">Open Position</button>
+            <p class="disclaimer">Two transactions: (1) token approve, (2) <code>submit_with_allowance</code>.</p>
+          </section>
+
+        </div><!-- .two-col -->
+      </div><!-- #dashboard -->
+
+      <!-- Toast -->
       <div id="toast" class="toast hidden">
         <span id="toast-icon"></span>
         <span id="toast-msg"></span>
         <a id="toast-link" class="toast-link hidden" target="_blank" rel="noopener">View →</a>
       </div>
+
     </main>
   </div>
 
