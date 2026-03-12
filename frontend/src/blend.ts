@@ -202,6 +202,7 @@ export interface ReserveStats {
 
 export async function fetchAllReserves(userAddress: string): Promise<ReserveStats[]> {
   const pool      = new Contract(POOL_ID);
+  const oracle    = new Contract(ORACLE_ID);
   const blndPrice = await fetchBlndPrice(userAddress);
 
   return Promise.all(
