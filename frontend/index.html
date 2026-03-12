@@ -78,6 +78,10 @@
             <span class="stat-value" id="stat-liquidity">—</span>
           </div>
           <div class="stat">
+            <span class="stat-label">Utilization <span class="tooltip" title="Pool utilization = total borrowed / total supplied. Above 85% is dangerous: collateral d-tokens become illiquid, liquidators can't profit, and bad debt accumulates.">?</span></span>
+            <span class="stat-value" id="stat-util">—</span>
+          </div>
+          <div class="stat">
             <span class="stat-label">Oracle price</span>
             <span class="stat-value" id="stat-price">—</span>
           </div>
@@ -221,8 +225,9 @@
                   <span>Days to liquidation</span><strong id="prev-liq-days">—</strong>
                 </div>
               </div>
-              <p class="hf-warning hidden" id="hf-warning">⚠ HF below 1.02 — liquidation risk. Reduce leverage.</p>
+              <p class="hf-warning hidden" id="hf-warning">⚠ HF below 1.05 — liquidation risk. Reduce leverage.</p>
               <p class="hf-warning hidden" id="liquidity-warning"></p>
+              <div class="safety-warnings hidden" id="safety-warnings"></div>
             </div>
             <button id="open-btn" class="btn btn-primary btn-lg">Open Position</button>
             <p class="disclaimer">Two transactions: (1) token approve, (2) <code>submit_with_allowance</code>.</p>

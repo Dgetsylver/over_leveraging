@@ -478,9 +478,126 @@ export function hfForLeverage(lev: number, c: number): number {
   return lev <= 1 ? Infinity : (c * lev) / (lev - 1);
 }
 
-/** Maximum leverage where HF ≥ 1.02 (small buffer above on-chain MIN_HF of ~1.0). */
+/** Maximum leverage where HF ≥ 1.055 (empirical safe minimum for on-chain loop). */
 export function maxLeverageFor(c: number): number {
-  return c >= 1.02 ? 100 : 1.02 / (1.02 - c);
+  return c >= 1.055 ? 100 : 1.055 / (1.055 - c);
+}
+
+// ── Safety guards ────────────────────────────────────────────────────────────
+//
+// These mitigate the structural risks of leveraged loop positions:
+//
+// 1. Circular Collateral / Liquidity Lock (Critical):
+//    Collateral and debt are claims on the SAME pool. At high utilization,
+//    d-tokens cannot be redeemed → liquidators can't profit → bad debt.
+//
+// 2. Rate Manipulation Forced Liquidation (High):
+//    An attacker can spike utilization to force borrow APR up, eroding HF
+//    of existing positions and profiting from liquidations.
+//
+// 3. Cascade Liquidation (Medium):
+//    One large liquidation shifts utilization enough to push adjacent
+//    positions below HF=1.0, triggering a chain reaction.
+//
+// Guards below refuse to open/extend positions when conditions are unsafe.
+
+/** Maximum pool utilization at which new leveraged positions are allowed. */
+export const MAX_SAFE_UTILIZATION = 0.85;
+
+/** Maximum allowed borrow-supply APR spread (percentage points). */
+export const MAX_RATE_SPREAD_PCT = 15;
+
+/** Minimum post-loop pool liquidity ratio (available / totalSupply). */
+export const MIN_POST_LOOP_LIQUIDITY = 0.10;
+
+export interface LoopSafetyResult {
+  safe:     boolean;
+  warnings: string[];
+  errors:   string[];
+  utilization:       number;  // current pool utilization
+  projectedUtil:     number;  // utilization after opening the loop
+  rateSpreadPct:     number;  // borrowAPR - supplyAPR (percentage points)
+  postLoopLiquidity: number;  // available / totalSupply after deposit
+}
+
+/**
+ * Pre-flight safety check for opening a leveraged loop position.
+ *
+ * Validates:
+ *  1. Utilization cap — refuses if pool utilization > MAX_SAFE_UTILIZATION
+ *  2. Projected utilization — refuses if the loop itself would push utilization above cap
+ *  3. Rate spread guard — warns if borrow-supply spread is dangerously high
+ *  4. Liquidation incentive — warns if post-loop liquidity is too low for liquidators
+ */
+export function checkLoopSafety(
+  rs: ReserveStats,
+  initialAmount: number,
+  leverage: number,
+): LoopSafetyResult {
+  const warnings: string[] = [];
+  const errors: string[]   = [];
+
+  // Current utilization
+  const utilization = rs.totalSupply > 0 ? rs.totalBorrow / rs.totalSupply : 0;
+
+  // Projected pool state after the loop
+  const totalSupplyPost = rs.totalSupply + initialAmount * leverage;
+  const totalBorrowPost = rs.totalBorrow + initialAmount * (leverage - 1);
+  const projectedUtil   = totalSupplyPost > 0 ? totalBorrowPost / totalSupplyPost : 0;
+
+  // Post-loop available liquidity (for liquidator d-token redemption)
+  const maxUtilPost      = rs.asset.maxUtil;
+  const availablePost    = Math.max(0, totalSupplyPost * maxUtilPost - totalBorrowPost);
+  const postLoopLiquidity = totalSupplyPost > 0 ? availablePost / totalSupplyPost : 0;
+
+  // Rate spread
+  const rateSpreadPct = rs.interestBorrowApr - rs.interestSupplyApr;
+
+  // ── Check 1: Current utilization cap ──
+  if (utilization > MAX_SAFE_UTILIZATION) {
+    errors.push(
+      `Pool utilization is ${(utilization * 100).toFixed(1)}% (max ${(MAX_SAFE_UTILIZATION * 100).toFixed(0)}%). ` +
+      `High utilization means d-tokens (collateral) cannot be redeemed — liquidators won't act, risking bad debt.`
+    );
+  }
+
+  // ── Check 2: Projected utilization after loop ──
+  if (projectedUtil > MAX_SAFE_UTILIZATION) {
+    errors.push(
+      `This position would push pool utilization to ${(projectedUtil * 100).toFixed(1)}% ` +
+      `(max ${(MAX_SAFE_UTILIZATION * 100).toFixed(0)}%). Reduce leverage or deposit amount.`
+    );
+  }
+
+  // ── Check 3: Rate spread guard ──
+  if (rateSpreadPct > MAX_RATE_SPREAD_PCT) {
+    errors.push(
+      `Borrow-supply spread is ${rateSpreadPct.toFixed(1)}% — abnormally high. ` +
+      `This may indicate rate manipulation. Wait for rates to stabilize.`
+    );
+  } else if (rateSpreadPct > 5) {
+    warnings.push(
+      `Borrow-supply spread is ${rateSpreadPct.toFixed(1)}%/yr — HF will erode quickly.`
+    );
+  }
+
+  // ── Check 4: Liquidation incentive (post-loop liquidity) ──
+  if (postLoopLiquidity < MIN_POST_LOOP_LIQUIDITY) {
+    warnings.push(
+      `Post-loop pool liquidity would be only ${(postLoopLiquidity * 100).toFixed(1)}%. ` +
+      `If HF drops, liquidators may not be able to redeem collateral d-tokens.`
+    );
+  }
+
+  return {
+    safe: errors.length === 0,
+    warnings,
+    errors,
+    utilization,
+    projectedUtil,
+    rateSpreadPct,
+    postLoopLiquidity,
+  };
 }
 
 /**

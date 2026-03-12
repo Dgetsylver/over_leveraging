@@ -26,6 +26,8 @@ import {
   submitSignedXdr,
   hfForLeverage,
   maxLeverageFor,
+  checkLoopSafety,
+  MAX_SAFE_UTILIZATION,
   type AssetInfo,
   type PoolDef,
   type ReserveStats,
@@ -194,10 +196,17 @@ function renderSelectedAsset() {
 
   updateLeverageSlider(rs.cFactor);
 
-  const maxLev = 1.02 / (1.02 - rs.cFactor);
+  const maxLev = 1.055 / (1.055 - rs.cFactor);
   $("stat-cfactor").textContent    = `${(rs.cFactor * 100).toFixed(0)}%`;
   $("stat-max-lev").textContent    = `${maxLev.toFixed(2)}×`;
   $("stat-liquidity").textContent  = `${fmt(rs.available, 0)} ${rs.asset.symbol}`;
+
+  // Utilization display with color coding
+  const util = rs.totalSupply > 0 ? rs.totalBorrow / rs.totalSupply : 0;
+  const utilEl = $("stat-util");
+  utilEl.textContent = `${(util * 100).toFixed(1)}%`;
+  utilEl.className = `stat-value ${util > MAX_SAFE_UTILIZATION ? "hf-bad" : util > 0.75 ? "hf-warn" : ""}`;
+
   $("stat-price").textContent      = rs.priceUsd > 0 ? `$${fmt(rs.priceUsd, 4)}` : "—";
 
   renderAprLine("supply-interest-apr", rs.interestSupplyApr, false);
@@ -385,8 +394,29 @@ function updatePreview() {
     liquidityWarnEl.classList.add("hidden");
   }
 
-  const safe = hf >= 1.02 && selectedPool.status === 1 && liquidityOk;
-  ($("hf-warning") as HTMLElement).classList.toggle("hidden", hf >= 1.02 || selectedPool.status !== 1);
+  // ── Safety guards (utilization cap, rate manipulation, liquidation incentive) ──
+  const safetyEl = $("safety-warnings") as HTMLElement;
+  let safetyOk = true;
+  if (rs && initial > 0) {
+    const safety = checkLoopSafety(rs, initial, lev);
+    safetyOk = safety.safe;
+
+    const items = [
+      ...safety.errors.map(e => `<div class="safety-error">⛔ ${e}</div>`),
+      ...safety.warnings.map(w => `<div class="safety-warn">⚠ ${w}</div>`),
+    ];
+    if (items.length > 0) {
+      safetyEl.innerHTML = items.join("");
+      safetyEl.classList.remove("hidden");
+    } else {
+      safetyEl.classList.add("hidden");
+    }
+  } else {
+    safetyEl.classList.add("hidden");
+  }
+
+  const safe = hf >= 1.055 && selectedPool.status === 1 && liquidityOk && safetyOk;
+  ($("hf-warning") as HTMLElement).classList.toggle("hidden", hf >= 1.055 || selectedPool.status !== 1);
   ($("open-btn") as HTMLButtonElement).disabled = !safe;
 }
 
@@ -433,7 +463,7 @@ async function openPosition() {
   const rs = reserves.find(r => r.asset.id === selectedAsset.id);
   const liveAsset = rs?.asset ?? selectedAsset;
 
-  if (hfForLeverage(leverage, liveAsset.cFactor) < 1.02) { toast("HF too low — reduce leverage", "error"); return; }
+  if (hfForLeverage(leverage, liveAsset.cFactor) < 1.055) { toast("HF too low — reduce leverage", "error"); return; }
 
   const totalBorrow   = initial * (leverage - 1);
   const firstBorrow   = Math.min(initial * liveAsset.cFactor, totalBorrow);
@@ -441,6 +471,18 @@ async function openPosition() {
   if (rs && firstBorrow > poolAvailAfterDeposit) {
     toast(`First borrow step (${fmt(firstBorrow, 0)}) exceeds pool available after deposit (${fmt(poolAvailAfterDeposit, 0)} ${rs.asset.symbol}). Reduce leverage.`, "error");
     return;
+  }
+
+  // Safety guards: utilization cap, rate manipulation, liquidation incentive
+  if (rs) {
+    const safety = checkLoopSafety(rs, initial, leverage);
+    if (!safety.safe) {
+      toast(safety.errors[0] ?? "Position blocked by safety checks", "error");
+      return;
+    }
+    if (safety.warnings.length > 0) {
+      console.warn("[safety]", safety.warnings.join(" | "));
+    }
   }
 
   const initialStroops = BigInt(Math.round(initial * 1e7));
