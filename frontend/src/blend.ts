@@ -20,7 +20,7 @@ export const POOL_ID   = "CDMAVJPFXPADND3YRL4BSM3AKZWCTFMX27GLLXCML3PD62HEQS5FPV
 export const ORACLE_ID = "CAVRP26CWW6IUEXBRA3Q2T2SHBUVBC2DF43M4E23LEZGW5ZEIB62HALS";
 export const BLND_ID   = "CD25MNVTZDL4Y3XBCPCJXGC7P7Q4BH5B7CTZSN7YXCEUN56HAQBCM7E";
 export const NETWORK   = Networks.PUBLIC;
-export const RPC_URL   = "https://mainnet.sorobanrpc.com";
+export const RPC_URL   = "https://rpc.lightsail.network/";
 
 // Oracle: base=USD, decimals=14 → price = raw / 1e14
 const ORACLE_DEC = 1e14;
