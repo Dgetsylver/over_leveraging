@@ -576,15 +576,20 @@ function setLoading(btn: HTMLButtonElement, on: boolean) {
 
 // ── Wallet connect / switch / disconnect ──────────────────────────────────────
 
+function showConnected() {
+  $("wallet-address").textContent = fmtAddr(userAddress!);
+  $("connect-btn").classList.add("hidden");
+  $("wallet-connected").classList.remove("hidden");
+  $("connect-prompt").classList.add("hidden");
+  $("dashboard").classList.remove("hidden");
+}
+
 async function connect() {
   try {
     const result = await StellarWalletsKit.authModal({ network: Networks.PUBLIC });
     userAddress  = result.address;
-    $("wallet-address").textContent = fmtAddr(userAddress);
-    $("connect-btn").classList.add("hidden");
-    $("wallet-connected").classList.remove("hidden");
-    $("connect-prompt").classList.add("hidden");
-    $("dashboard").classList.remove("hidden");
+    localStorage.setItem("walletAddress", userAddress);
+    showConnected();
     buildPoolTabs();
     buildAssetTabs();
     await loadAll();
@@ -597,8 +602,9 @@ async function connect() {
 async function switchWallet() {
   try {
     const result = await StellarWalletsKit.authModal({ network: Networks.PUBLIC });
-    if (result.address === userAddress) return; // same address, nothing to do
+    if (result.address === userAddress) return;
     userAddress = result.address;
+    localStorage.setItem("walletAddress", userAddress);
     $("wallet-address").textContent = fmtAddr(userAddress);
     reserves  = [];
     positions = { byAsset: new Map() };
@@ -612,6 +618,7 @@ async function switchWallet() {
 async function disconnect() {
   await StellarWalletsKit.disconnect();
   userAddress = null;
+  localStorage.removeItem("walletAddress");
   reserves    = [];
   positions   = { byAsset: new Map() };
   $("connect-btn").classList.remove("hidden");
@@ -675,3 +682,14 @@ $("max-btn").addEventListener("click",        maxDeposit);
 
 // Init preview with defaults
 updatePreview();
+
+// ── Auto-reconnect saved wallet ──────────────────────────────────────────────
+(async () => {
+  const saved = localStorage.getItem("walletAddress");
+  if (!saved) return;
+  userAddress = saved;
+  showConnected();
+  buildPoolTabs();
+  buildAssetTabs();
+  await loadAll();
+})();
