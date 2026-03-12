@@ -167,6 +167,11 @@
                   <span class="metric-label">Borrow headroom <span class="tooltip" title="USD value you could still borrow before hitting the liquidation threshold">?</span></span>
                   <span class="metric-value mono" id="pos-headroom">—</span>
                 </div>
+                <div class="position-metric position-metric-full">
+                  <span class="metric-label">Days until liquidation <span class="tooltip" title="Estimated days before HF hits 1.0 based on interest-only drift (ignoring BLND emissions). If you don't claim and convert BLND to repay, this is your real runway.">?</span></span>
+                  <span class="metric-value" id="pos-liq-days">—</span>
+                  <div class="liq-days-note" id="pos-liq-note"></div>
+                </div>
               </div>
               <div class="position-actions">
                 <button id="repay-btn" class="btn btn-secondary" disabled>Repay Debt</button>

@@ -152,6 +152,8 @@ main { flex: 1; max-width: 940px; width: 100%; margin: 0 auto; padding: 20px 16p
 .position-metric { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 12px 14px; }
 .metric-label { display: block; font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
 .metric-value { font-size: 16px; font-weight: 600; display: block; }
+.position-metric-full { grid-column: 1 / -1; }
+.liq-days-note { font-size: 11px; color: var(--text-3); margin-top: 5px; line-height: 1.4; }
 .hf-bar-wrap { height: 3px; background: var(--border); border-radius: 2px; margin-top: 7px; overflow: hidden; }
 .hf-bar { height: 100%; border-radius: 2px; transition: width .4s, background .4s; }
 .empty-state { color: var(--text-2); font-size: 14px; padding: 8px 0; }
