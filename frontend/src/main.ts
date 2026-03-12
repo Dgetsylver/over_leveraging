@@ -394,8 +394,8 @@ function updatePreview() {
     liquidityWarnEl.classList.add("hidden");
   }
 
-  const safe = hf >= 1.055 && selectedPool.status === 1 && liquidityOk;
-  ($("hf-warning") as HTMLElement).classList.toggle("hidden", hf >= 1.055 || selectedPool.status !== 1);
+  const safe = hf >= 1.01 && selectedPool.status === 1 && liquidityOk;
+  ($("hf-warning") as HTMLElement).classList.toggle("hidden", hf >= 1.01 || selectedPool.status !== 1);
   ($("open-btn") as HTMLButtonElement).disabled = !safe;
 }
 
@@ -442,7 +442,7 @@ async function openPosition() {
   const rs = reserves.find(r => r.asset.id === selectedAsset.id);
   const liveAsset = rs?.asset ?? selectedAsset;
 
-  if (hfForLeverage(leverage, liveAsset.cFactor, rs?.lFactor ?? 1) < 1.055) { toast("HF too low — reduce leverage", "error"); return; }
+  if (hfForLeverage(leverage, liveAsset.cFactor, rs?.lFactor ?? 1) < 1.01) { toast("HF too low — reduce leverage", "error"); return; }
 
   const totalBorrow   = initial * (leverage - 1);
   const firstBorrow   = Math.min(initial * liveAsset.cFactor, totalBorrow);

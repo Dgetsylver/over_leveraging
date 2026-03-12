@@ -481,12 +481,12 @@ export function hfForLeverage(lev: number, c: number, l: number = 1): number {
   return lev <= 1 ? Infinity : (c * lev) / ((lev - 1) / l);
 }
 
-/** Maximum leverage where HF ≥ 1.055 (empirical safe minimum for on-chain loop). */
+/** Maximum leverage where HF ≥ 1.01 (empirical safe minimum for on-chain loop). */
 export function maxLeverageFor(c: number, l: number = 1): number {
   // HF = c * lev / ((lev - 1) / l) = c * l * lev / (lev - 1)
   // Solve HF = minHF: lev = minHF / (minHF - c * l)
   const cl = c * l;
-  const minHF = 1.055;
+  const minHF = 1.01;
   return cl >= minHF ? 100 : minHF / (minHF - cl);
 }
 
