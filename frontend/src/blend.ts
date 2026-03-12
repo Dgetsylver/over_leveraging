@@ -587,9 +587,11 @@ export async function buildCloseSubmitXdr(
   userAddress: string,
   pos: AssetPosition,
 ): Promise<string> {
-  // Exact underlying amounts from b/d-token shares × exchange rate
+  // Underlying amounts from b/d-token shares × exchange rate.
+  // REPAY uses a +0.5% buffer to cover interest accrued between fetch and execution.
+  // Blend's apply_repay caps at actual debt and refunds excess — no over-burn risk.
   const withdrawAmount = pos.bTokens * pos.bRate / RATE_DEC;
-  const repayAmount    = pos.dTokens * pos.dRate / RATE_DEC; // exact, no buffer
+  const repayAmount    = pos.dTokens * pos.dRate / RATE_DEC * 1005n / 1000n;
   const requests       = buildRequestsVec([
     buildRequest(pos.asset.id, withdrawAmount, WITHDRAW_COLLATERAL),
     buildRequest(pos.asset.id, repayAmount,    REPAY),
@@ -623,7 +625,8 @@ export async function buildRepayXdr(
   userAddress: string,
   pos: AssetPosition,
 ): Promise<string> {
-  const debtAmount = pos.dTokens * pos.dRate / RATE_DEC; // exact, no buffer
+  // +0.5% buffer on both to ensure full debt coverage; Blend caps at actuals.
+  const debtAmount = pos.dTokens * pos.dRate / RATE_DEC * 1005n / 1000n;
   const requests   = buildRequestsVec([
     buildRequest(pos.asset.id, debtAmount, WITHDRAW_COLLATERAL),
     buildRequest(pos.asset.id, debtAmount, REPAY),
