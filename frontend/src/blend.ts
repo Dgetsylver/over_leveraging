@@ -166,17 +166,16 @@ async function simulate(userAddress: string, op: xdr.Operation): Promise<any> {
 // ── BLND price from CoinGecko ─────────────────────────────────────────────────
 
 let _blndPriceCache: number | null = null;
-export async function fetchBlndPrice(): Promise<number> {
+export async function fetchBlndPrice(userAddress: string): Promise<number> {
   if (_blndPriceCache !== null) return _blndPriceCache;
   try {
-    // Try CoinGecko free API; may be blocked by CORS on some hosts
-    const res  = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=blend-2&vs_currencies=usd", { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json() as any;
-    _blndPriceCache = data["blend-2"]?.usd ?? 0;
+    const oracle = new Contract(ORACLE_ID);
+    const raw = await simulate(userAddress, oracle.call("lastprice", assetScVal(BLND_ID)));
+    _blndPriceCache = raw ? Number(BigInt(raw.price)) / ORACLE_DEC : 0;
   } catch {
     _blndPriceCache = 0;
   }
+  console.log("[blend] BLND price (USD):", _blndPriceCache);
   return _blndPriceCache!;
 }
 
@@ -202,9 +201,8 @@ export interface ReserveStats {
 }
 
 export async function fetchAllReserves(userAddress: string): Promise<ReserveStats[]> {
-  const pool   = new Contract(POOL_ID);
-  const oracle = new Contract(ORACLE_ID);
-  const blndPrice = await fetchBlndPrice();
+  const pool      = new Contract(POOL_ID);
+  const blndPrice = await fetchBlndPrice(userAddress);
 
   return Promise.all(
     ASSETS.map(async (asset): Promise<ReserveStats> => {
@@ -224,6 +222,10 @@ export async function fetchAllReserves(userAddress: string): Promise<ReserveStat
       }
 
       const priceUsd = priceRaw ? Number(BigInt(priceRaw.price)) / ORACLE_DEC : 0;
+
+      // Debug: log raw contract data so we can verify field names / values
+      console.log(`[blend] ${asset.symbol} reserveRaw:`, JSON.stringify(reserveRaw, (_k, v) => typeof v === "bigint" ? v.toString() : v, 2));
+      console.log(`[blend] ${asset.symbol} priceUsd=${priceUsd}, supplyEmissions:`, supplyEmissions, "borrowEmissions:", borrowEmissions);
 
       const bRate    = reserveRaw ? BigInt(reserveRaw.data.b_rate) : RATE_DEC;
       const dRate    = reserveRaw ? BigInt(reserveRaw.data.d_rate) : RATE_DEC;
@@ -271,6 +273,8 @@ export async function fetchAllReserves(userAddress: string): Promise<ReserveStat
       const blndBorrowApr  = totalBorrowUsd > 0
         ? (borrowBlndYr * blndPrice / totalBorrowUsd) * 100
         : 0;
+
+      console.log(`[blend] ${asset.symbol} util=${util.toFixed(4)} borrowApr=${interestBorrowApr.toFixed(4)}% supplyApr=${interestSupplyApr.toFixed(4)}% blndSupplyApr=${blndSupplyApr.toFixed(4)}% supplyEps=${supplyEps}`);
 
       return {
         asset: { ...asset, cFactor, maxUtil: maxUtilActual },
