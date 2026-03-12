@@ -37,7 +37,8 @@ header {
 }
 .header-left { display: flex; align-items: center; gap: 14px; }
 .logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; }
-.logo-icon { font-size: 18px; }
+.logo-icon-img { width: 28px; height: 28px; }
+.connect-prompt-logo { width: 80px; height: 80px; margin-bottom: 12px; }
 .pool-badge {
   display: flex; align-items: center; gap: 5px; padding: 3px 10px;
   border-radius: 20px; background: var(--surface2); border: 1px solid var(--border); font-size: 12px;

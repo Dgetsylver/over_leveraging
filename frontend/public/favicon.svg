@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="h" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6c8ef5"/>
+      <stop offset="100%" stop-color="#4a6cf7"/>
+    </linearGradient>
+    <linearGradient id="a" x1="28" y1="14" x2="36" y2="50" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#8b6cf7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Hexagon -->
+  <polygon points="32,4 58,20 58,44 32,60 6,44 6,20"
+    fill="none" stroke="url(#h)" stroke-width="3.5" stroke-linejoin="round"/>
+
+  <!-- Up arrow -->
+  <rect x="28" y="24" width="8" height="22" rx="2" fill="url(#a)"/>
+  <polygon points="32,14 42,28 22,28" fill="url(#a)"/>
+</svg>
