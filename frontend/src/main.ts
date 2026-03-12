@@ -137,11 +137,11 @@ function selectPool(pool: PoolDef) {
 
 // ── Asset tabs ────────────────────────────────────────────────────────────────
 
-/** Set leverage slider min/max/step based on asset cFactor. */
-function updateLeverageSlider(c: number) {
+/** Set leverage slider min/max/step based on asset cFactor and lFactor. */
+function updateLeverageSlider(c: number, l: number = 1) {
   const slider = $("leverage-slider") as HTMLInputElement;
   const numIn  = $("leverage-input")  as HTMLInputElement;
-  const maxLev = Math.floor(maxLeverageFor(c) * 10) / 10; // floor to 1 decimal
+  const maxLev = Math.floor(maxLeverageFor(c, l) * 10) / 10; // floor to 1 decimal
   slider.min = numIn.min = "1.1";
   slider.max = numIn.max = String(maxLev);
   slider.step = numIn.step = "0.1";
@@ -171,7 +171,7 @@ function selectAsset(asset: AssetInfo) {
   ($("asset-symbol-suffix") as HTMLElement).textContent = asset.symbol;
 
   const rs = reserves.find(r => r.asset.id === asset.id);
-  updateLeverageSlider(rs ? rs.cFactor : asset.cFactor);
+  updateLeverageSlider(rs ? rs.cFactor : asset.cFactor, rs?.lFactor ?? 1);
 
   renderSelectedAsset();
   if (userAddress) refreshTabData();
@@ -192,9 +192,9 @@ function renderSelectedAsset() {
   const rs = reserves.find(r => r.asset.id === selectedAsset.id);
   if (!rs) return;
 
-  updateLeverageSlider(rs.cFactor);
+  updateLeverageSlider(rs.cFactor, rs.lFactor);
 
-  const maxLev = 1.055 / (1.055 - rs.cFactor);
+  const maxLev = maxLeverageFor(rs.cFactor, rs.lFactor);
   $("stat-cfactor").textContent    = `${(rs.cFactor * 100).toFixed(0)}%`;
   $("stat-max-lev").textContent    = `${maxLev.toFixed(2)}×`;
   $("stat-liquidity").textContent  = `${fmt(rs.available, 0)} ${rs.asset.symbol}`;
@@ -238,7 +238,7 @@ function computePoolHF(): number {
     const rs = reserves.find(r => r.asset.id === pos.asset.id);
     if (!rs) continue;
     weightedCollateral += pos.collateral * rs.cFactor * rs.priceUsd;
-    totalDebt          += pos.debt * rs.priceUsd;
+    totalDebt          += (pos.debt / rs.lFactor) * rs.priceUsd;
   }
   return totalDebt > 0 ? weightedCollateral / totalDebt : Infinity;
 }
@@ -282,13 +282,14 @@ function renderPosition() {
   poolHFEl.textContent = isFinite(poolHF) ? fmt(poolHF, 3) : "∞";
   poolHFEl.className   = `metric-value ${poolHF > 1.1 ? "hf-ok" : poolHF > 1.03 ? "hf-warn" : "hf-bad"}`;
 
-  // Borrow headroom: (collateral × cFactor − debt) × priceUsd
+  // Borrow headroom: (collateral × cFactor − debt / lFactor) × priceUsd
   // = how much more USD-worth can be borrowed before hitting HF = 1
   const rs = reserves.find(r => r.asset.id === selectedAsset.id);
   const headroomEl = $("pos-headroom");
   if (rs && rs.priceUsd > 0) {
-    const maxDebt   = pos.collateral * rs.cFactor;    // in tokens
-    const headroom  = Math.max(0, maxDebt - pos.debt) * rs.priceUsd;
+    const effectiveCollateral = pos.collateral * rs.cFactor;
+    const effectiveDebt       = pos.debt / rs.lFactor;
+    const headroom  = Math.max(0, effectiveCollateral - effectiveDebt) * rs.priceUsd;
     headroomEl.textContent = `$${fmt(headroom, 2)}`;
     headroomEl.className   = `metric-value mono ${headroom < 5 ? "hf-bad" : headroom < 20 ? "hf-warn" : ""}`;
   } else {
@@ -346,9 +347,10 @@ function updatePreview() {
   // Keep the number input in sync with the slider
   if (parseFloat(numIn.value) !== lev) numIn.value = lev.toFixed(1);
   const initial = parseFloat(($("initial-input") as HTMLInputElement).value) || 0;
-  const c       = selectedAsset.cFactor;
-  const hf      = hfForLeverage(lev, c);
   const rs      = reserves.find(r => r.asset.id === selectedAsset.id);
+  const c       = rs ? rs.cFactor : selectedAsset.cFactor;
+  const l       = rs?.lFactor ?? 1;
+  const hf      = hfForLeverage(lev, c, l);
 
   $("prev-lev").textContent = `${lev.toFixed(2)}×`;
   $("prev-supply").textContent      = `${fmt(initial * lev, 2)} ${selectedAsset.symbol}`;
@@ -440,7 +442,7 @@ async function openPosition() {
   const rs = reserves.find(r => r.asset.id === selectedAsset.id);
   const liveAsset = rs?.asset ?? selectedAsset;
 
-  if (hfForLeverage(leverage, liveAsset.cFactor) < 1.055) { toast("HF too low — reduce leverage", "error"); return; }
+  if (hfForLeverage(leverage, liveAsset.cFactor, rs?.lFactor ?? 1) < 1.055) { toast("HF too low — reduce leverage", "error"); return; }
 
   const totalBorrow   = initial * (leverage - 1);
   const firstBorrow   = Math.min(initial * liveAsset.cFactor, totalBorrow);

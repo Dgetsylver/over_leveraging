@@ -261,6 +261,7 @@ export async function fetchBlndPrice(pool: PoolDef, userAddress: string): Promis
 export interface ReserveStats {
   asset:         AssetInfo;
   cFactor:       number;
+  lFactor:       number;   // liability factor (0..1); effective_debt = debt / lFactor
   priceUsd:      number;   // oracle price per 1 full token
   totalSupply:   number;   // full tokens
   totalBorrow:   number;
@@ -318,6 +319,7 @@ export async function fetchAllReserves(pool: PoolDef, userAddress: string): Prom
       const maxUtilActual = reserveRaw ? reserveRaw.config.max_util / SCALAR_F : asset.maxUtil;
       const available    = Math.max(0, totalSupply * maxUtilActual - totalBorrow);
       const cFactor      = reserveRaw ? reserveRaw.config.c_factor / SCALAR_F : asset.cFactor;
+      const lFactor      = reserveRaw ? reserveRaw.config.l_factor / SCALAR_F : 1.0;
 
       // ── Blend v2 exact interest rate formula (from blend-sdk-js) ────────────
       const util = totalSupply > 0 ? totalBorrow / totalSupply : 0;
@@ -375,11 +377,12 @@ export async function fetchAllReserves(pool: PoolDef, userAddress: string): Prom
         ? (borrowBlndYr * blndPrice / totalBorrowUsd) * 100
         : 0;
 
-      console.log(`[blend:${pool.name}] ${asset.symbol} util=${util.toFixed(4)} borrowApr=${interestBorrowApr.toFixed(4)}% supplyApr=${interestSupplyApr.toFixed(4)}% blndSupplyApr=${blndSupplyApr.toFixed(4)}% supplyEps=${supplyEps}`);
+      console.log(`[blend:${pool.name}] ${asset.symbol} util=${util.toFixed(4)} c=${cFactor.toFixed(4)} l=${lFactor.toFixed(4)} borrowApr=${interestBorrowApr.toFixed(4)}% supplyApr=${interestSupplyApr.toFixed(4)}% blndSupplyApr=${blndSupplyApr.toFixed(4)}% supplyEps=${supplyEps}`);
 
       results.push({
         asset: { ...asset, cFactor, maxUtil: maxUtilActual },
         cFactor,
+        lFactor,
         priceUsd,
         totalSupply,
         totalBorrow,
@@ -442,7 +445,7 @@ export async function fetchUserPositions(
     const debt       = Number(dTokens * rs.dRate / RATE_DEC) / SCALAR_F;
     const equity     = collateral - debt;
     const leverage   = equity > 0 ? collateral / equity : 0;
-    const hf         = debt > 0 ? (collateral * rs.cFactor) / debt : Infinity;
+    const hf         = debt > 0 ? (collateral * rs.cFactor) / (debt / rs.lFactor) : Infinity;
 
     byAsset.set(rs.asset.id, {
       asset: rs.asset,
@@ -473,14 +476,18 @@ export async function fetchAssetBalance(userAddress: string, assetId: string): P
 
 // ── Leverage math ─────────────────────────────────────────────────────────────
 
-/** Health factor at a given leverage and collateral factor. */
-export function hfForLeverage(lev: number, c: number): number {
-  return lev <= 1 ? Infinity : (c * lev) / (lev - 1);
+/** Health factor at a given leverage, collateral factor, and liability factor. */
+export function hfForLeverage(lev: number, c: number, l: number = 1): number {
+  return lev <= 1 ? Infinity : (c * lev) / ((lev - 1) / l);
 }
 
 /** Maximum leverage where HF ≥ 1.055 (empirical safe minimum for on-chain loop). */
-export function maxLeverageFor(c: number): number {
-  return c >= 1.055 ? 100 : 1.055 / (1.055 - c);
+export function maxLeverageFor(c: number, l: number = 1): number {
+  // HF = c * lev / ((lev - 1) / l) = c * l * lev / (lev - 1)
+  // Solve HF = minHF: lev = minHF / (minHF - c * l)
+  const cl = c * l;
+  const minHF = 1.055;
+  return cl >= minHF ? 100 : minHF / (minHF - cl);
 }
 
 // ── Safety guards ────────────────────────────────────────────────────────────
