@@ -704,18 +704,18 @@ export async function buildOpenPositionXdr(
  * Uses submit_with_allowance which NETS transfers: for close, the net is
  * collateral − debt = equity, so the pool just sends equity to the user.
  * No approve step needed (net flow is pool → user, not user → pool).
- * No buffer on REPAY to avoid InvalidDTokenBurnAmount (#1219).
+ *
+ * REPAY uses exact underlying amount (no buffer) to avoid #1219
+ * (InvalidDTokenBurnAmount). Blend caps WITHDRAW at actual b-tokens,
+ * so any tiny residual collateral from rate ticks is safe.
  */
 export async function buildCloseSubmitXdr(
   pool: PoolDef,
   userAddress: string,
   pos: AssetPosition,
 ): Promise<string> {
-  // Underlying amounts from b/d-token shares × exchange rate.
-  // REPAY uses a +0.5% buffer to cover interest accrued between fetch and execution.
-  // Blend's apply_repay caps at actual debt and refunds excess — no over-burn risk.
   const withdrawAmount = pos.bTokens * pos.bRate / RATE_DEC;
-  const repayAmount    = pos.dTokens * pos.dRate / RATE_DEC * 1005n / 1000n;
+  const repayAmount    = pos.dTokens * pos.dRate / RATE_DEC;
   const requests       = buildRequestsVec([
     buildRequest(pos.asset.id, withdrawAmount, WITHDRAW_COLLATERAL),
     buildRequest(pos.asset.id, repayAmount,    REPAY),
@@ -749,8 +749,9 @@ export async function buildRepayXdr(
   userAddress: string,
   pos: AssetPosition,
 ): Promise<string> {
-  // +0.5% buffer on both to ensure full debt coverage; Blend caps at actuals.
-  const debtAmount = pos.dTokens * pos.dRate / RATE_DEC * 1005n / 1000n;
+  // Exact debt amount — no buffer on REPAY to avoid #1219 (InvalidDTokenBurnAmount).
+  // WITHDRAW uses same amount; Blend caps at actual b-tokens if slightly over.
+  const debtAmount = pos.dTokens * pos.dRate / RATE_DEC;
   const requests   = buildRequestsVec([
     buildRequest(pos.asset.id, debtAmount, WITHDRAW_COLLATERAL),
     buildRequest(pos.asset.id, debtAmount, REPAY),
