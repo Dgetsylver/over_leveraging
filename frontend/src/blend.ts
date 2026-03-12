@@ -409,7 +409,9 @@ export interface AssetPosition {
   asset:        AssetInfo;
   bTokens:      bigint;
   dTokens:      bigint;
-  collateral:   number; // full tokens
+  bRate:        bigint;   // supply share → underlying exchange rate (RATE_DEC scale)
+  dRate:        bigint;   // debt share → underlying exchange rate (RATE_DEC scale)
+  collateral:   number;   // full tokens
   debt:         number;
   equity:       number;
   leverage:     number;
@@ -446,6 +448,8 @@ export async function fetchUserPositions(
       asset: rs.asset,
       bTokens,
       dTokens,
+      bRate: rs.bRate,
+      dRate: rs.dRate,
       collateral,
       debt,
       equity,
@@ -571,36 +575,67 @@ export async function buildOpenPositionXdr(
 }
 
 /**
- * Build just the WITHDRAW + REPAY submit transaction for closing a position.
- * The approve must be built and submitted FIRST (separately) so that both
- * transactions use distinct sequence numbers. Call buildApproveXdr with
- * Math.ceil(pos.debt * SCALAR_F * 1.01) as the amount before calling this.
+ * Build a WITHDRAW + REPAY transaction to fully close a leveraged position.
+ * Uses submit with Soroban auth propagation — no approve needed.
+ * Amounts are derived from exact b/d-token share counts to avoid residuals.
  */
 export async function buildCloseSubmitXdr(
   pool: PoolDef,
   userAddress: string,
   pos: AssetPosition,
 ): Promise<string> {
-  // WITHDRAW all collateral (b-tokens → actual tokens), REPAY all debt + 0.5% buffer
-  const debtWithBuf  = BigInt(Math.ceil(pos.debt * SCALAR_F * 1.005));
-  const requests     = buildRequestsVec([
-    buildRequest(pos.asset.id, pos.bTokens, WITHDRAW_COLLATERAL),
-    buildRequest(pos.asset.id, debtWithBuf, REPAY),
+  // Exact underlying amounts from b/d-token shares × exchange rate
+  const withdrawAmount = pos.bTokens * pos.bRate / RATE_DEC;
+  const repayAmount    = pos.dTokens * pos.dRate / RATE_DEC * 1005n / 1000n; // +0.5% buffer
+  const requests       = buildRequestsVec([
+    buildRequest(pos.asset.id, withdrawAmount, WITHDRAW_COLLATERAL),
+    buildRequest(pos.asset.id, repayAmount,    REPAY),
   ]);
 
   const poolContract = new Contract(pool.id);
   const addrScVal    = new Address(userAddress).toScVal();
-  const acc          = await server.getAccount(userAddress); // fresh seq after approve
+  const acc          = await server.getAccount(userAddress);
   const tx           = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
     networkPassphrase: NETWORK,
   })
-    .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
+    .addOperation(poolContract.call("submit", addrScVal, addrScVal, addrScVal, requests))
     .setTimeout(60).build();
 
   const sim = await server.simulateTransaction(tx);
   if (!SorobanRpc.Api.isSimulationSuccess(sim))
     throw new Error(`Close simulation failed: ${(sim as SorobanRpc.Api.SimulateTransactionErrorResponse).error}`);
+  return SorobanRpc.assembleTransaction(tx, sim).build().toXDR();
+}
+
+/**
+ * Build a REPAY-only transaction to pay back all outstanding debt without
+ * closing/unlooping the position. Uses submit with Soroban auth propagation —
+ * no approve needed.
+ */
+export async function buildRepayXdr(
+  pool: PoolDef,
+  userAddress: string,
+  pos: AssetPosition,
+): Promise<string> {
+  const repayAmount = pos.dTokens * pos.dRate / RATE_DEC * 1005n / 1000n; // +0.5% buffer
+  const requests    = buildRequestsVec([
+    buildRequest(pos.asset.id, repayAmount, REPAY),
+  ]);
+
+  const poolContract = new Contract(pool.id);
+  const addrScVal    = new Address(userAddress).toScVal();
+  const acc          = await server.getAccount(userAddress);
+  const tx           = new TransactionBuilder(acc, {
+    fee: (BigInt(BASE_FEE) * 10n).toString(),
+    networkPassphrase: NETWORK,
+  })
+    .addOperation(poolContract.call("submit", addrScVal, addrScVal, addrScVal, requests))
+    .setTimeout(60).build();
+
+  const sim = await server.simulateTransaction(tx);
+  if (!SorobanRpc.Api.isSimulationSuccess(sim))
+    throw new Error(`Repay simulation failed: ${(sim as SorobanRpc.Api.SimulateTransactionErrorResponse).error}`);
   return SorobanRpc.assembleTransaction(tx, sim).build().toXDR();
 }
 

@@ -163,8 +163,13 @@
                   <span class="metric-label">Net APY <span class="tooltip" title="Return on your initial deposit (equity) at current leverage">?</span></span>
                   <span class="metric-value" id="pos-net-apr">—</span>
                 </div>
+                <div class="position-metric">
+                  <span class="metric-label">Borrow headroom <span class="tooltip" title="USD value you could still borrow before hitting the liquidation threshold">?</span></span>
+                  <span class="metric-value mono" id="pos-headroom">—</span>
+                </div>
               </div>
               <div class="position-actions">
+                <button id="repay-btn" class="btn btn-secondary" disabled>Repay Debt</button>
                 <button id="close-btn" class="btn btn-danger" disabled>Close Position</button>
               </div>
             </div>
@@ -179,6 +184,7 @@
               <label>Initial deposit</label>
               <div class="input-wrap">
                 <input type="number" id="initial-input" class="input mono" placeholder="1000" min="0" step="any" value="1000" />
+                <button id="max-btn" class="btn btn-ghost btn-sm input-max-btn">Max</button>
                 <span class="input-suffix" id="asset-symbol-suffix">—</span>
               </div>
               <span class="balance-hint">Wallet: <span id="asset-balance">—</span></span>
@@ -187,7 +193,8 @@
               <label>Leverage <span class="tooltip" title="Higher leverage = higher yield and lower Health Factor">?</span></label>
               <div class="slider-row">
                 <input type="range" id="leverage-slider" min="1.1" max="12.9" step="0.1" value="2.0" class="slider" />
-                <span id="leverage-display" class="slider-value mono">2.0×</span>
+                <input type="number" id="leverage-input" class="input mono leverage-num-input" min="1.1" max="12.9" step="0.1" value="2.0" />
+                <span class="slider-value-x mono">×</span>
               </div>
               <div class="leverage-preview">
                 <div class="preview-row">

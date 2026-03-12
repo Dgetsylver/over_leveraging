@@ -21,6 +21,7 @@ import {
   buildApproveXdr,
   buildOpenPositionXdr,
   buildCloseSubmitXdr,
+  buildRepayXdr,
   buildClaimXdr,
   submitSignedXdr,
   hfForLeverage,
@@ -139,13 +140,14 @@ function selectPool(pool: PoolDef) {
 /** Set leverage slider min/max/step based on asset cFactor. */
 function updateLeverageSlider(c: number) {
   const slider = $("leverage-slider") as HTMLInputElement;
+  const numIn  = $("leverage-input")  as HTMLInputElement;
   const maxLev = Math.floor(maxLeverageFor(c) * 10) / 10; // floor to 1 decimal
-  slider.min  = "1.1";
-  slider.max  = String(maxLev);
-  slider.step = "0.1";
+  slider.min = numIn.min = "1.1";
+  slider.max = numIn.max = String(maxLev);
+  slider.step = numIn.step = "0.1";
   const cur = parseFloat(slider.value);
-  if (cur > maxLev) slider.value = String(maxLev);
-  if (cur < 1.1)    slider.value = "1.1";
+  const clamped = Math.min(maxLev, Math.max(1.1, cur));
+  if (clamped !== cur) { slider.value = String(clamped); numIn.value = String(clamped); }
 }
 
 function buildAssetTabs() {
@@ -243,12 +245,14 @@ function renderPosition() {
     $("no-position").classList.remove("hidden");
     $("position-data").classList.add("hidden");
     ($("close-btn") as HTMLButtonElement).disabled = true;
+    ($("repay-btn") as HTMLButtonElement).disabled = true;
     return;
   }
 
   $("no-position").classList.add("hidden");
   $("position-data").classList.remove("hidden");
   ($("close-btn") as HTMLButtonElement).disabled = false;
+  ($("repay-btn") as HTMLButtonElement).disabled = pos.dTokens === 0n;
 
   $("pos-collateral").textContent = `${fmt(pos.collateral, 4)} ${pos.asset.symbol}`;
   $("pos-debt").textContent       = `${fmt(pos.debt, 4)} ${pos.asset.symbol}`;
@@ -271,8 +275,21 @@ function renderPosition() {
   poolHFEl.textContent = isFinite(poolHF) ? fmt(poolHF, 3) : "∞";
   poolHFEl.className   = `metric-value ${poolHF > 1.1 ? "hf-ok" : poolHF > 1.03 ? "hf-warn" : "hf-bad"}`;
 
-  // Net APY at current leverage — this is % of initial equity (your deposit)
+  // Borrow headroom: (collateral × cFactor − debt) × priceUsd
+  // = how much more USD-worth can be borrowed before hitting HF = 1
   const rs = reserves.find(r => r.asset.id === selectedAsset.id);
+  const headroomEl = $("pos-headroom");
+  if (rs && rs.priceUsd > 0) {
+    const maxDebt   = pos.collateral * rs.cFactor;    // in tokens
+    const headroom  = Math.max(0, maxDebt - pos.debt) * rs.priceUsd;
+    headroomEl.textContent = `$${fmt(headroom, 2)}`;
+    headroomEl.className   = `metric-value mono ${headroom < 5 ? "hf-bad" : headroom < 20 ? "hf-warn" : ""}`;
+  } else {
+    headroomEl.textContent = "—";
+    headroomEl.className   = "metric-value mono";
+  }
+
+  // Net APY at current leverage — this is % of initial equity (your deposit)
   const netAprEl = $("pos-net-apr");
   if (rs && pos.leverage > 0) {
     const netApr = rs.netSupplyApr * pos.leverage - rs.netBorrowCost * (pos.leverage - 1);
@@ -287,15 +304,17 @@ function renderPosition() {
 // ── Leverage preview ──────────────────────────────────────────────────────────
 
 function updatePreview() {
-  const slider  = $("leverage-slider") as HTMLInputElement;
-  const lev     = parseFloat(slider.value) || 1.1;
+  const slider = $("leverage-slider") as HTMLInputElement;
+  const numIn  = $("leverage-input")  as HTMLInputElement;
+  const lev    = parseFloat(slider.value) || 1.1;
+  // Keep the number input in sync with the slider
+  if (parseFloat(numIn.value) !== lev) numIn.value = lev.toFixed(1);
   const initial = parseFloat(($("initial-input") as HTMLInputElement).value) || 0;
   const c       = selectedAsset.cFactor;
   const hf      = hfForLeverage(lev, c);
   const rs      = reserves.find(r => r.asset.id === selectedAsset.id);
 
-  $("leverage-display").textContent = `${lev.toFixed(1)}×`;
-  $("prev-lev").textContent         = `${lev.toFixed(2)}×`;
+  $("prev-lev").textContent = `${lev.toFixed(2)}×`;
   $("prev-supply").textContent      = `${fmt(initial * lev, 2)} ${selectedAsset.symbol}`;
   $("prev-borrow").textContent      = `${fmt(initial * (lev - 1), 2)} ${selectedAsset.symbol}`;
   $("prev-hf").textContent          = isFinite(hf) ? fmt(hf, 3) : "∞";
@@ -409,12 +428,7 @@ async function closePosition() {
   if (!pos) return;
   setLoading($("close-btn") as HTMLButtonElement, true);
   try {
-    // Step 1: approve debt + 1% buffer FIRST so the close tx gets a fresh sequence number
-    const approveAmount = BigInt(Math.ceil(pos.debt * 1e7 * 1.01));
-    const approveXdr    = await buildApproveXdr(selectedPool, userAddress, pos.asset.id, approveAmount);
-    await signAndSubmit(approveXdr, `Approve ${selectedAsset.symbol} (close)`);
-
-    // Step 2: build close tx AFTER approve confirms — fresh account sequence number
+    // submit uses Soroban auth propagation — no approve transaction needed
     const submitXdr = await buildCloseSubmitXdr(selectedPool, userAddress, pos);
     await signAndSubmit(submitXdr, `Close ${selectedAsset.symbol} position`);
     await loadAll();
@@ -423,6 +437,31 @@ async function closePosition() {
   } finally {
     setLoading($("close-btn") as HTMLButtonElement, false);
   }
+}
+
+async function repayDebt() {
+  if (!userAddress) return;
+  const pos = positions.byAsset.get(selectedAsset.id);
+  if (!pos || pos.dTokens === 0n) return;
+  setLoading($("repay-btn") as HTMLButtonElement, true);
+  try {
+    const repayXdr = await buildRepayXdr(selectedPool, userAddress, pos);
+    await signAndSubmit(repayXdr, `Repay ${selectedAsset.symbol} debt`);
+    await loadAll();
+  } catch (e: any) {
+    toast(e?.message ?? "Transaction failed", "error");
+  } finally {
+    setLoading($("repay-btn") as HTMLButtonElement, false);
+  }
+}
+
+async function maxDeposit() {
+  if (!userAddress) return;
+  try {
+    const bal = await fetchAssetBalance(userAddress, selectedAsset.id);
+    ($("initial-input") as HTMLInputElement).value = String(Math.floor(bal * 1e7) / 1e7);
+    updatePreview();
+  } catch { /* ignore */ }
 }
 
 async function claimBlnd() {
@@ -506,9 +545,21 @@ $("disconnect-btn").addEventListener("click", disconnect);
 $("refresh-btn").addEventListener("click",    () => loadAll());
 $("open-btn").addEventListener("click",       openPosition);
 $("close-btn").addEventListener("click",      closePosition);
+$("repay-btn").addEventListener("click",      repayDebt);
 $("claim-btn").addEventListener("click",      claimBlnd);
+$("max-btn").addEventListener("click",        maxDeposit);
 
 ($("leverage-slider") as HTMLInputElement).addEventListener("input",  updatePreview);
+($("leverage-input")  as HTMLInputElement).addEventListener("input", () => {
+  const numIn  = $("leverage-input")  as HTMLInputElement;
+  const slider = $("leverage-slider") as HTMLInputElement;
+  let v = parseFloat(numIn.value);
+  if (!isNaN(v)) {
+    v = Math.min(parseFloat(slider.max), Math.max(parseFloat(slider.min), v));
+    slider.value = v.toFixed(1);
+    updatePreview();
+  }
+});
 ($("initial-input")   as HTMLInputElement).addEventListener("input",  () => { refreshTabData(); updatePreview(); });
 ($("initial-input")   as HTMLInputElement).addEventListener("change", () => { refreshTabData(); updatePreview(); });
 

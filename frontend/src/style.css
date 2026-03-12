@@ -173,19 +173,21 @@ main { flex: 1; max-width: 940px; width: 100%; margin: 0 auto; padding: 20px 16p
 }
 .input-wrap { position: relative; }
 .input {
-  width: 100%; padding: 9px 14px; padding-right: 70px;
+  width: 100%; padding: 9px 14px; padding-right: 100px;
   background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r-sm);
   color: var(--text); font-size: 14px; outline: none; transition: border-color .15s;
 }
 .input:focus { border-color: var(--primary); }
 .input-suffix { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--text-3); pointer-events: none; font-family: var(--mono); }
+.input-max-btn { position: absolute; right: 44px; top: 50%; transform: translateY(-50%); font-size: 11px; padding: 2px 7px; line-height: 1.4; }
 .balance-hint { display: block; font-size: 12px; color: var(--text-3); margin-top: 5px; }
 
 .slider-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .slider { flex: 1; -webkit-appearance: none; height: 4px; border-radius: 2px; background: var(--border); cursor: pointer; }
 .slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--primary); cursor: pointer; transition: background .15s; }
 .slider::-webkit-slider-thumb:hover { background: var(--primary-h); }
-.slider-value { font-family: var(--mono); font-size: 20px; font-weight: 600; min-width: 26px; text-align: right; }
+.leverage-num-input { width: 72px; padding: 6px 8px; font-size: 15px; text-align: right; padding-right: 4px; }
+.slider-value-x { font-family: var(--mono); font-size: 18px; font-weight: 600; color: var(--text-2); margin-left: -6px; }
 
 .leverage-preview {
   background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r-sm);
