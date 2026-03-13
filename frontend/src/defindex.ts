@@ -258,7 +258,8 @@ export async function buildVaultDepositXdr(
 
   const sim = await blendServer.simulateTransaction(tx);
   if (!SorobanRpc.Api.isSimulationSuccess(sim)) {
-    throw new Error(`Deposit simulation failed`);
+    const errDetail = 'error' in sim ? JSON.stringify((sim as any).error).slice(0, 300) : 'unknown';
+    throw new Error(`Deposit simulation failed: ${errDetail}`);
   }
 
   const prepared = SorobanRpc.assembleTransaction(tx, sim).build();
@@ -296,7 +297,8 @@ export async function buildVaultWithdrawXdr(
 
   const sim = await blendServer.simulateTransaction(tx);
   if (!SorobanRpc.Api.isSimulationSuccess(sim)) {
-    throw new Error(`Withdraw simulation failed`);
+    const errDetail = 'error' in sim ? JSON.stringify((sim as any).error).slice(0, 300) : 'unknown';
+    throw new Error(`Withdraw simulation failed: ${errDetail}`);
   }
 
   const prepared = SorobanRpc.assembleTransaction(tx, sim).build();

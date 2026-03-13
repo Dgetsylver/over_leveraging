@@ -2385,9 +2385,17 @@ async function refreshVaultView() {
 
   // Fetch user position if connected
   if (connected && userAddress) {
-    const bal = await fetchAssetBalance(userAddress, vault.assetId);
-    $("vault-wallet-balance").textContent =
-      (bal / 10 ** vault.decimals).toFixed(2) + " " + vault.assetSymbol;
+    try {
+      const bal = await fetchAssetBalance(userAddress, vault.assetId);
+      const balHuman = bal / 10 ** vault.decimals;
+      $("vault-wallet-balance").textContent =
+        balHuman.toFixed(2) + " " + vault.assetSymbol;
+      if (balHuman === 0 && getActiveNetwork() === "testnet") {
+        $("vault-wallet-balance").textContent += " (use Fund Wallet above)";
+      }
+    } catch {
+      $("vault-wallet-balance").textContent = "0.00 " + vault.assetSymbol + " (use Fund Wallet above)";
+    }
 
     const pos = await fetchUserVaultBalance(vault, userAddress);
     if (pos && pos.underlyingValue > 0) {
