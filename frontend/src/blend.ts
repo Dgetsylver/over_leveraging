@@ -52,6 +52,7 @@ interface AssetMeta {
   decimals: number;
   cFactor:  number; // default collateral factor
   maxUtil:  number; // default max utilisation
+  fallbackPrice?: number; // USD price fallback when oracle is unavailable
 }
 
 interface NetworkConfig {
@@ -189,10 +190,10 @@ const TESTNET_CONFIG: NetworkConfig = {
   ],
   assetMetadata: {
     "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC": {
-      symbol: "XLM", name: "Stellar Lumens",  decimals: 7, cFactor: 0.75, maxUtil: 0.70,
+      symbol: "XLM", name: "Stellar Lumens",  decimals: 7, cFactor: 0.75, maxUtil: 0.70, fallbackPrice: 0.10,
     },
     "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA": {
-      symbol: "USDC", name: "USD Coin",         decimals: 7, cFactor: 0.95, maxUtil: 0.95,
+      symbol: "USDC", name: "USD Coin",         decimals: 7, cFactor: 0.95, maxUtil: 0.95, fallbackPrice: 1.0,
     },
   },
   classicAssets: {
@@ -371,7 +372,8 @@ export interface ReserveStats {
 
 export async function fetchAllReserves(pool: PoolDef, userAddress: string): Promise<ReserveStats[]> {
   const poolContract = new Contract(pool.id);
-  const oracle       = new Contract(pool.oracleId);
+  const hasOracle    = !!pool.oracleId;
+  const oracle       = hasOracle ? new Contract(pool.oracleId) : null;
   const blndPrice    = await fetchBlndPrice(pool, userAddress);
   const assets       = getPoolAssets(pool);
 
@@ -383,17 +385,21 @@ export async function fetchAllReserves(pool: PoolDef, userAddress: string): Prom
     let supplyEmissions: any = null;
     let borrowEmissions: any = null;
     try {
-      [reserveRaw, priceRaw, supplyEmissions, borrowEmissions] = await Promise.all([
+      const calls: Promise<any>[] = [
         simulate(poolContract.call("get_reserve", new Address(asset.id).toScVal())),
-        simulate(oracle.call("lastprice", assetScVal(asset.id))),
+        oracle
+          ? simulate(oracle.call("lastprice", assetScVal(asset.id)))
+          : Promise.resolve(null),
         simulate(poolContract.call("get_reserve_emissions", nativeToScVal(asset.supplyTokenId, { type: "u32" }))),
         simulate(poolContract.call("get_reserve_emissions", nativeToScVal(asset.borrowTokenId, { type: "u32" }))),
-      ]);
+      ];
+      [reserveRaw, priceRaw, supplyEmissions, borrowEmissions] = await Promise.all(calls);
     } catch (e) {
       console.warn(`fetchAllReserves: error fetching ${asset.symbol}:`, e);
     }
 
-      const priceUsd = priceRaw ? Number(BigInt(priceRaw.price)) / pool.oracleDec : 0;
+      const fallback = _cfg.assetMetadata[asset.id]?.fallbackPrice ?? 0;
+      const priceUsd = priceRaw ? Number(BigInt(priceRaw.price)) / pool.oracleDec : fallback;
 
 
       const bRate   = reserveRaw ? BigInt(reserveRaw.data.b_rate)   : RATE_DEC;
