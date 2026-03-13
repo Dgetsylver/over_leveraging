@@ -1,5 +1,5 @@
 /**
- * Blend Leverage UI — multi-pool support (Etherfuse, Fixed, YieldBlox)
+ * Turbolong UI — multi-pool support (Etherfuse, Fixed, YieldBlox)
  */
 
 import { StellarWalletsKit } from "@creit-tech/stellar-wallets-kit/sdk";

@@ -1,19 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#1a1f2e"/>
-      <stop offset="100%" stop-color="#0d0f14"/>
+      <stop offset="0%" stop-color="#0a0e17"/>
+      <stop offset="100%" stop-color="#060810"/>
     </linearGradient>
-    <linearGradient id="hex" x1="128" y1="80" x2="384" y2="432" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#6c8ef5"/>
-      <stop offset="100%" stop-color="#4a6cf7"/>
+    <linearGradient id="bolt" x1="200" y1="80" x2="320" y2="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00e599"/>
+      <stop offset="50%" stop-color="#00d4aa"/>
+      <stop offset="100%" stop-color="#00c2bb"/>
     </linearGradient>
-    <linearGradient id="arrow" x1="200" y1="160" x2="312" y2="352" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#a78bfa"/>
-      <stop offset="100%" stop-color="#8b6cf7"/>
+    <linearGradient id="ring" x1="40" y1="40" x2="472" y2="472" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00e599"/>
+      <stop offset="100%" stop-color="#00c2bb"/>
     </linearGradient>
     <filter id="glow">
-      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feGaussianBlur stdDeviation="10" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
@@ -22,38 +23,24 @@
   </defs>
 
   <!-- Background circle -->
-  <circle cx="256" cy="256" r="248" fill="url(#bg)" stroke="#252b3b" stroke-width="4"/>
+  <circle cx="256" cy="256" r="248" fill="url(#bg)" stroke="url(#ring)" stroke-width="4" opacity="0.4"/>
 
-  <!-- Outer hexagon -->
-  <polygon points="256,72 420,168 420,344 256,440 92,344 92,168"
-    fill="none" stroke="url(#hex)" stroke-width="12" stroke-linejoin="round"
-    opacity="0.3" filter="url(#glow)"/>
+  <!-- Outer ring -->
+  <circle cx="256" cy="256" r="220" fill="none" stroke="url(#ring)" stroke-width="3" opacity="0.2"/>
 
-  <!-- Inner hexagon -->
-  <polygon points="256,112 388,188 388,324 256,400 124,324 124,188"
-    fill="none" stroke="url(#hex)" stroke-width="6" stroke-linejoin="round"
-    opacity="0.6"/>
-
-  <!-- Up arrow (leverage up) -->
+  <!-- Lightning bolt (turbo/leverage up) -->
   <g filter="url(#glow)">
-    <!-- Arrow shaft -->
-    <rect x="240" y="180" width="32" height="160" rx="6" fill="url(#arrow)"/>
-    <!-- Arrow head -->
-    <polygon points="256,140 300,210 212,210" fill="url(#arrow)"/>
+    <polygon points="290,80 180,280 250,280 222,432 332,220 260,220"
+      fill="url(#bolt)" opacity="0.95"/>
   </g>
 
-  <!-- Multiply symbol (×) on the right -->
-  <g opacity="0.8">
-    <line x1="340" y1="200" x2="400" y2="260" stroke="#6c8ef5" stroke-width="10" stroke-linecap="round"/>
-    <line x1="400" y1="200" x2="340" y2="260" stroke="#6c8ef5" stroke-width="10" stroke-linecap="round"/>
-  </g>
-
-  <!-- Small stacked bars (representing loop iterations) -->
-  <g opacity="0.5">
-    <rect x="130" y="260" width="60" height="8" rx="4" fill="#6c8ef5"/>
-    <rect x="138" y="278" width="52" height="8" rx="4" fill="#6c8ef5"/>
-    <rect x="146" y="296" width="44" height="8" rx="4" fill="#6c8ef5"/>
-    <rect x="154" y="314" width="36" height="8" rx="4" fill="#6c8ef5"/>
-    <rect x="162" y="332" width="28" height="8" rx="4" fill="#6c8ef5"/>
+  <!-- Speed lines -->
+  <g opacity="0.3" stroke="#00e599" stroke-width="3" stroke-linecap="round">
+    <line x1="100" y1="180" x2="160" y2="200"/>
+    <line x1="90" y1="240" x2="155" y2="248"/>
+    <line x1="100" y1="300" x2="160" y2="292"/>
+    <line x1="352" y1="200" x2="412" y2="180"/>
+    <line x1="357" y1="248" x2="422" y2="240"/>
+    <line x1="352" y1="292" x2="412" y2="300"/>
   </g>
 </svg>

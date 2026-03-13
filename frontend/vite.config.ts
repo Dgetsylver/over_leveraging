@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  base: "/over_leveraging/",
+  base: "/",
   define: {
     // Some Stellar SDK internals check for global
     global: "globalThis",
