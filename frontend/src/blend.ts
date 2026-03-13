@@ -851,6 +851,39 @@ export async function buildClaimXdr(
   return SorobanRpc.assembleTransaction(tx, sim).build().toXDR();
 }
 
+// ── Resupply (add collateral to existing position) ───────────────────────
+
+/**
+ * Build a SUPPLY_COLLATERAL transaction to add more collateral to an
+ * existing position. This increases HF without changing debt.
+ * Requires a prior approve for the amount.
+ */
+export async function buildResupplyXdr(
+  pool: PoolDef,
+  userAddress: string,
+  assetId: string,
+  amountStroops: bigint,
+): Promise<string> {
+  const requests = buildRequestsVec([
+    buildRequest(assetId, amountStroops, SUPPLY_COLLATERAL),
+  ]);
+
+  const poolContract = new Contract(pool.id);
+  const addrScVal    = new Address(userAddress).toScVal();
+  const acc          = await server.getAccount(userAddress);
+  const tx           = new TransactionBuilder(acc, {
+    fee: (BigInt(BASE_FEE) * 10n).toString(),
+    networkPassphrase: NETWORK,
+  })
+    .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
+    .setTimeout(60).build();
+
+  const sim = await server.simulateTransaction(tx);
+  if (!SorobanRpc.Api.isSimulationSuccess(sim))
+    throw new Error(`Resupply simulation failed: ${(sim as SorobanRpc.Api.SimulateTransactionErrorResponse).error}`);
+  return SorobanRpc.assembleTransaction(tx, sim).build().toXDR();
+}
+
 // ── Swap BLND → asset via Stellar DEX path payment ───────────────────────
 
 /**

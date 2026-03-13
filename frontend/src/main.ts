@@ -24,6 +24,7 @@ import {
   buildCloseSubmitXdr,
   buildRepayXdr,
   buildClaimXdr,
+  buildResupplyXdr,
   buildSwapBlndXdr,
   estimateBlndSwap,
   submitSignedXdr,
@@ -306,6 +307,7 @@ function renderPosition() {
     $("position-data").classList.add("hidden");
     ($("close-btn") as HTMLButtonElement).disabled = true;
     ($("repay-btn") as HTMLButtonElement).disabled = true;
+    ($("resupply-btn") as HTMLButtonElement).disabled = true;
     return;
   }
 
@@ -313,6 +315,7 @@ function renderPosition() {
   $("position-data").classList.remove("hidden");
   ($("close-btn") as HTMLButtonElement).disabled = false;
   ($("repay-btn") as HTMLButtonElement).disabled = pos.dTokens === 0n;
+  ($("resupply-btn") as HTMLButtonElement).disabled = false;
 
   $("pos-collateral").textContent = `${fmt(pos.collateral, 4)} ${pos.asset.symbol}`;
   $("pos-debt").textContent       = `${fmt(pos.debt, 4)} ${pos.asset.symbol}`;
@@ -625,6 +628,33 @@ async function claimBlnd() {
     toast(e?.message ?? "Transaction failed", "error");
   } finally {
     setLoading($("claim-btn") as HTMLButtonElement, false);
+  }
+}
+
+/** Resupply: deposit entire wallet balance of the position asset as extra collateral. */
+async function resupply() {
+  if (!userAddress) return;
+  const pos = positions.byAsset.get(selectedAsset.id);
+  if (!pos) return;
+
+  const bal = await fetchAssetBalance(userAddress, selectedAsset.id);
+  if (bal <= 0) { toast(`No ${selectedAsset.symbol} in wallet to resupply`, "error"); return; }
+
+  const amountStroops = BigInt(Math.round(bal * 1e7));
+  setLoading($("resupply-btn") as HTMLButtonElement, true);
+  try {
+    // Approve pool to pull tokens
+    const approveXdr = await buildApproveXdr(selectedPool, userAddress, selectedAsset.id, amountStroops + 1n);
+    await signAndSubmit(approveXdr, `Approve ${selectedAsset.symbol}`);
+
+    // Supply as collateral
+    const supplyXdr = await buildResupplyXdr(selectedPool, userAddress, selectedAsset.id, amountStroops);
+    await signAndSubmit(supplyXdr, `Resupply ${fmt(bal, 4)} ${selectedAsset.symbol}`);
+    await loadAll();
+  } catch (e: any) {
+    toast(e?.message ?? "Resupply failed", "error");
+  } finally {
+    setLoading($("resupply-btn") as HTMLButtonElement, false);
   }
 }
 
@@ -966,6 +996,7 @@ $("repay-btn").addEventListener("click",      repayDebt);
 $("claim-btn").addEventListener("click",      claimBlnd);
 $("max-btn").addEventListener("click",        maxDeposit);
 $("compound-btn").addEventListener("click",   claimAndConvert);
+$("resupply-btn").addEventListener("click",   resupply);
 
 ($("leverage-slider") as HTMLInputElement).addEventListener("input",  updatePreview);
 // Live preview while typing (no clamping so user can type multi-digit numbers like "10")
