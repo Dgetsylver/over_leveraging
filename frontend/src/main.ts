@@ -139,6 +139,27 @@ async function switchNetwork(net: NetworkMode) {
   buildAssetTabs();
   renderPoolFooter();
   updatePreview();
+
+  // Prompt user to switch wallet network
+  const label = net === "testnet" ? "Testnet" : "Mainnet (Public)";
+  toast(`Switched to ${label}. Please also switch your wallet to ${label} before connecting.`, "info");
+}
+
+/** Check that the connected wallet's network matches the app's selected network. */
+async function verifyWalletNetwork(): Promise<boolean> {
+  try {
+    const walletNet = await StellarWalletsKit.getNetwork();
+    const expectedPassphrase = getNetworkPassphrase();
+    if (walletNet.networkPassphrase !== expectedPassphrase) {
+      const expected = getActiveNetwork() === "testnet" ? "Testnet" : "Mainnet";
+      toast(`Network mismatch: your wallet is on a different network. Please switch your wallet to ${expected}.`, "error");
+      return false;
+    }
+    return true;
+  } catch {
+    // If getNetwork isn't supported (e.g. some wallets), skip the check
+    return true;
+  }
 }
 
 // ── Fund testnet wallet ──────────────────────────────────────────────────────
@@ -1489,6 +1510,12 @@ function showConnected() {
 async function connect() {
   try {
     const result = await StellarWalletsKit.authModal({ network: getActiveNetwork() === "testnet" ? Networks.TESTNET : Networks.PUBLIC });
+    // Verify wallet network matches app network
+    const networkOk = await verifyWalletNetwork();
+    if (!networkOk) {
+      await StellarWalletsKit.disconnect();
+      return;
+    }
     userAddress  = result.address;
     localStorage.setItem("walletAddress", userAddress);
     showConnected();
@@ -1506,6 +1533,9 @@ async function switchWallet() {
   try {
     const result = await StellarWalletsKit.authModal({ network: getActiveNetwork() === "testnet" ? Networks.TESTNET : Networks.PUBLIC });
     if (result.address === userAddress) return;
+    // Verify wallet network matches app network
+    const networkOk = await verifyWalletNetwork();
+    if (!networkOk) return;
     userAddress = result.address;
     localStorage.setItem("walletAddress", userAddress);
     $("wallet-address").textContent = fmtAddr(userAddress);
