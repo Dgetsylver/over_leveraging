@@ -58,6 +58,7 @@ import {
   buildVaultDepositXdr,
   buildVaultWithdrawXdr,
   buildVaultRebalanceXdr,
+  fetchTokenBalance,
   formatUsd,
   formatHf,
   type VaultConfig,
@@ -1397,7 +1398,14 @@ async function adjustLeverage() {
     await loadAll();
   } catch (e: any) {
     markStepperError(1);
-    toast(e?.message ?? "Adjust leverage failed", "error");
+    const msg: string = e?.message ?? "Adjust leverage failed";
+    if (msg.includes("#1205") || msg.includes("InvalidHf")) {
+      toast("Health factor too low — reduce target leverage.", "error");
+    } else if (msg.includes("#1207") || msg.includes("InvalidUtilRate")) {
+      toast("Pool utilization limit reached — not enough liquidity. Reduce target leverage.", "error");
+    } else {
+      toast(msg.slice(0, 200), "error");
+    }
   } finally {
     setLoading($("adjust-btn") as HTMLButtonElement, false);
   }
@@ -2400,9 +2408,9 @@ async function refreshVaultView() {
 
   // Fetch user position if connected
   if (connected && userAddress) {
-    // Wallet token balance (fetchAssetBalance already returns human-readable)
+    // Wallet token balance (use defindex invokeRead which works reliably)
     try {
-      const bal = await fetchAssetBalance(userAddress, vault.assetId);
+      const bal = await fetchTokenBalance(vault.assetId, userAddress, vault.decimals);
       _userWalletBalance = bal;
       $("vault-wallet-balance").textContent =
         bal.toFixed(2) + " " + vault.assetSymbol;

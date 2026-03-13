@@ -333,6 +333,27 @@ export async function buildVaultRebalanceXdr(
   return prepared.toXDR();
 }
 
+// ── Token balance helper ────────────────────────────────────────────────────
+
+/**
+ * Fetch a token balance using the same RPC path as vault queries.
+ * Works around blend.ts fetchAssetBalance silently returning 0.
+ */
+export async function fetchTokenBalance(
+  tokenContractId: string,
+  userAddress: string,
+  decimals: number = 7,
+): Promise<number> {
+  try {
+    const addressVal = nativeToScVal(userAddress, { type: "address" });
+    const result = await invokeRead(tokenContractId, "balance", [addressVal]);
+    const raw = Number(scValToNative(result));
+    return raw / (10 ** decimals);
+  } catch {
+    return 0;
+  }
+}
+
 // ── Formatting helpers ───────────────────────────────────────────────────────
 
 export function formatUsd(n: number, decimals = 2): string {
