@@ -231,8 +231,9 @@ async function fundTestnetWallet() {
     }
 
     toast("Testnet wallet funded! USDC trustline opened and tokens acquired.", "success");
-    // Reload pool data
+    // Reload current view data
     if (activeView === "leverage") await loadAll();
+    else if (activeView === "vault") await refreshVaultView();
   } catch (e: any) {
     const msg = e?.message ?? String(e);
     // If path payment fails (no liquidity), still report trustline success
