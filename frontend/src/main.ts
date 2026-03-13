@@ -683,25 +683,22 @@ function switchView(view: AppView) {
 
 // ── Swap assets ──────────────────────────────────────────────────────────
 
-const SWAP_ASSETS: { symbol: string; id: string }[] = [
-  { symbol: "XLM",  id: "native" },
-  { symbol: "USDC", id: "USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN" },
-  { symbol: "BLND", id: "BLND-CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY" },
-  { symbol: "AQUA", id: "AQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA" },
+// Swap assets use classic Stellar CODE-ISSUER format (not Soroban contract addresses)
+const SWAP_ASSETS: { symbol: string; brokerId: string }[] = [
+  { symbol: "XLM",     brokerId: "XLM" },
+  { symbol: "USDC",    brokerId: "USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN" },
+  { symbol: "EURC",    brokerId: "EURC-GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4IBER" },
+  { symbol: "AQUA",    brokerId: "AQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA" },
+  { symbol: "BLND",    brokerId: "BLND-GATALTGTWIOT6BUDBCZM3Q4OQ4BO2COLOAZ7GDOHTWBKL7GVOF7TPQS6" },
+  { symbol: "yXLM",    brokerId: "yXLM-GARDNV3Q7YGT4AKSDF25LT32YSCCW4EV22Y2TV3I2PU2MMXJTEDL5T55" },
+  { symbol: "USDGLO",  brokerId: "USDGLO-GBBS25EGYQPGEZCGCFBKG4OAGFJ2HIFFYJQFOU5YQFWKDMFPN2SFXONM" },
 ];
 
-// Add pool assets dynamically
-function getSwapAssetList(): { symbol: string; id: string }[] {
-  const seen = new Set(SWAP_ASSETS.map(a => a.id));
+function getSwapAssetList(): { symbol: string; brokerId: string }[] {
+  const seen = new Set(SWAP_ASSETS.map(a => a.symbol));
   const list = [...SWAP_ASSETS];
-  for (const pool of KNOWN_POOLS) {
-    for (const asset of getPoolAssets(pool)) {
-      if (!seen.has(asset.id)) {
-        seen.add(asset.id);
-        list.push({ symbol: asset.symbol, id: asset.id });
-      }
-    }
-  }
+  // Don't add pool assets automatically — they use Soroban contract IDs
+  // which the Stellar Broker can't resolve. Only classic CODE-ISSUER format works.
   return list;
 }
 
@@ -712,23 +709,17 @@ function populateSwapAssets() {
 
   const list = getSwapAssetList();
   list.forEach(a => {
-    sellSelect.add(new Option(a.symbol, a.id));
-    buySelect.add(new Option(a.symbol, a.id));
+    sellSelect.add(new Option(a.symbol, a.brokerId));
+    buySelect.add(new Option(a.symbol, a.brokerId));
   });
   // Defaults: sell XLM, buy USDC
-  sellSelect.value = "native";
-  if (list.find(a => a.id.startsWith("USDC"))) {
-    buySelect.value = list.find(a => a.id.startsWith("USDC"))!.id;
+  sellSelect.value = "XLM";
+  const usdcAsset = list.find(a => a.symbol === "USDC");
+  if (usdcAsset) {
+    buySelect.value = usdcAsset.brokerId;
   } else {
     buySelect.selectedIndex = 1;
   }
-}
-
-/** Convert our asset id format to Stellar Broker format */
-function toBrokerAsset(id: string): string {
-  if (id === "native") return "XLM";
-  // Our format: CODE-ISSUER  → Broker format: CODE-ISSUER (same)
-  return id;
 }
 
 let _quoteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -749,8 +740,8 @@ async function fetchSwapQuote() {
 
   try {
     const quote = await estimateSwap({
-      sellingAsset: toBrokerAsset(sellAsset),
-      buyingAsset: toBrokerAsset(buyAsset),
+      sellingAsset: sellAsset,
+      buyingAsset: buyAsset,
       sellingAmount: sellAmount,
       slippageTolerance: 0.02,
     });
@@ -758,6 +749,7 @@ async function fetchSwapQuote() {
     _lastQuote = quote;
 
     if (quote.status === "success" && quote.estimatedBuyingAmount) {
+      ($("swap-buy-amount") as HTMLInputElement).placeholder = "—";
       ($("swap-buy-amount") as HTMLInputElement).value = parseFloat(quote.estimatedBuyingAmount).toFixed(7);
 
       const sellNum = parseFloat(sellAmount);
@@ -777,10 +769,12 @@ async function fetchSwapQuote() {
       _lastQuote = null;
     }
   } catch (e: any) {
-    ($("swap-buy-amount") as HTMLInputElement).value = "Error";
+    const errMsg = e?.message ?? String(e);
+    ($("swap-buy-amount") as HTMLInputElement).value = "";
+    ($("swap-buy-amount") as HTMLInputElement).placeholder = "Quote unavailable";
     $("swap-quote-details").classList.add("hidden");
     _lastQuote = null;
-    console.error("Swap quote error:", e);
+    console.warn("Swap quote:", errMsg);
   }
   updateSwapBtn();
 }
@@ -853,11 +847,21 @@ $("swap-reverse").addEventListener("click", () => {
   updateSwapBalance();
 });
 
+// Map broker asset ID back to Soroban contract ID for balance lookups
+const BROKER_TO_CONTRACT: Record<string, string> = {
+  "XLM": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+  "USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+  "EURC-GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4IBER": "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
+  "AQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA": "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
+};
+
 async function updateSwapBalance() {
   if (!userAddress) return;
-  const sellAsset = ($("swap-sell-asset") as HTMLSelectElement).value;
+  const sellBrokerId = ($("swap-sell-asset") as HTMLSelectElement).value;
+  const contractId = BROKER_TO_CONTRACT[sellBrokerId];
+  if (!contractId) { $("swap-sell-balance").textContent = "—"; return; }
   try {
-    const bal = await fetchAssetBalance(userAddress, sellAsset);
+    const bal = await fetchAssetBalance(userAddress, contractId);
     const sym = ($("swap-sell-asset") as HTMLSelectElement).selectedOptions[0].text;
     $("swap-sell-balance").textContent = `${fmt(bal, 4)} ${sym}`;
   } catch { $("swap-sell-balance").textContent = "—"; }
