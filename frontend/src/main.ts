@@ -129,6 +129,22 @@ async function switchNetwork(net: NetworkMode) {
   ($("fund-testnet-btn") as HTMLButtonElement).disabled = false;
   ($("fund-testnet-btn") as HTMLButtonElement).textContent = "Fund Wallet";
 
+  // Reset vault state
+  _lastVaultStats = null;
+  _userVaultBalance = 0;
+  _userWalletBalance = 0;
+  $("vault-tvl").textContent = "--";
+  $("vault-share-price").textContent = "--";
+  $("vault-apy").textContent = "--";
+  $("vault-leverage").textContent = "--";
+  $("vault-hf").textContent = "--";
+  $("vault-min-hf").textContent = "--";
+  $("vault-strategy-pos").classList.add("hidden");
+  $("vault-hf-bar-wrap").classList.add("hidden");
+  $("vault-user-pos").classList.add("hidden");
+  $("vault-wallet-balance").textContent = "--";
+  $("vault-withdraw-balance").textContent = "--";
+
   // Reset view
   $("connect-btn").classList.remove("hidden");
   $("wallet-connected").classList.add("hidden");
