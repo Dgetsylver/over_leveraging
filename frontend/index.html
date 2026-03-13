@@ -52,19 +52,19 @@
             </button>
             <div id="pool-tabs" class="pool-tabs"></div>
           </div>
-          <!-- Swap -->
-          <div class="protocol-section">
-            <button class="protocol-btn" id="proto-swap">
-              <span class="protocol-icon">&#8644;</span>
-              Swap
-            </button>
-          </div>
           <!-- Coming soon -->
           <div class="protocol-section">
             <button class="protocol-btn protocol-btn-disabled" disabled>
               <span class="protocol-dot protocol-dot-soon"></span>
               More Protocols
               <span class="coming-soon-badge">Soon</span>
+            </button>
+          </div>
+          <!-- Swap -->
+          <div class="protocol-section">
+            <button class="protocol-btn" id="proto-swap">
+              <span class="protocol-icon">&#8644;</span>
+              Swap
             </button>
           </div>
         </nav>
@@ -242,12 +242,14 @@
               </div>
             </section>
 
-            <!-- Open position -->
+            <!-- Open / Adjust position -->
             <section class="card">
               <div class="card-header">
-                <h2>Open Position</h2>
+                <h2 id="action-card-title">Open Position</h2>
               </div>
-              <div class="form-group">
+
+              <!-- Open mode: initial deposit -->
+              <div id="open-deposit-group" class="form-group">
                 <label>Initial deposit</label>
                 <div class="input-wrap">
                   <input type="number" id="initial-input" class="input mono" placeholder="1000" min="0" step="any" value="1000" />
@@ -256,8 +258,15 @@
                 </div>
                 <span class="balance-hint">Wallet: <span id="asset-balance">—</span></span>
               </div>
+
+              <!-- Adjust mode: current leverage indicator -->
+              <div id="adjust-current" class="adjust-current hidden">
+                <span class="adjust-current-label">Current leverage</span>
+                <span class="adjust-current-value mono" id="adjust-current-lev">—</span>
+              </div>
+
               <div class="form-group">
-                <label>Leverage <span class="tooltip" title="Multiplier on your deposit. Higher leverage amplifies both yield and liquidation risk.">?</span></label>
+                <label id="leverage-label">Leverage <span class="tooltip" title="Multiplier on your deposit. Higher leverage amplifies both yield and liquidation risk.">?</span></label>
                 <div class="slider-row">
                   <input type="range" id="leverage-slider" min="1.1" max="12.9" step="0.1" value="2.0" class="slider" />
                   <input type="number" id="leverage-input" class="input mono leverage-num-input" min="1.1" max="12.9" step="0.1" value="2.0" />
@@ -287,7 +296,9 @@
                 <p class="hf-warning hidden" id="liquidity-warning"></p>
               </div>
               <button id="open-btn" class="btn btn-primary btn-lg">Open Position</button>
-              <p class="disclaimer">Two transactions: (1) token approve, (2) <code>submit_with_allowance</code>.</p>
+              <button id="adjust-btn" class="btn btn-primary btn-lg hidden">Adjust Leverage</button>
+              <p class="disclaimer" id="open-disclaimer">Two transactions: (1) token approve, (2) <code>submit_with_allowance</code>.</p>
+              <p class="disclaimer hidden" id="adjust-disclaimer">Adjusts leverage by borrowing more (increase) or withdrawing & repaying (decrease).</p>
             </section>
 
           </div><!-- .two-col -->

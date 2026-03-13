@@ -857,6 +857,112 @@ export async function buildClaimXdr(
   return SorobanRpc.assembleTransaction(tx, sim).build().toXDR();
 }
 
+// ── Adjust leverage (increase / decrease) ────────────────────────────────
+
+/**
+ * Build requests to INCREASE leverage on an existing position.
+ * Borrows more and supplies as collateral in a loop, same pattern as opening.
+ * No wallet tokens needed — all new collateral comes from borrowing.
+ */
+export async function buildIncreaseLeverageXdr(
+  pool: PoolDef,
+  userAddress: string,
+  asset: AssetInfo,
+  pos: AssetPosition,
+  targetLev: number,
+): Promise<string> {
+  if (pos.equity <= 0) throw new Error("No equity in position");
+  const targetCollateral = pos.equity * targetLev;
+  const additionalBorrow = targetCollateral - pos.collateral;
+  if (additionalBorrow <= 0) throw new Error("Target leverage is not higher than current");
+
+  const additionalBorrowStroops = BigInt(Math.round(additionalBorrow * 1e7));
+  const cFactorBn = BigInt(Math.round(asset.cFactor * SCALAR_F));
+
+  // Build BORROW → SUPPLY loop for the additional amount
+  const items: xdr.ScVal[] = [];
+  let totalBorrowed = 0n;
+  let balance = 0n;
+
+  // First borrow: use existing unused borrowing capacity
+  const firstBorrow = additionalBorrowStroops < (pos.collateral * 1e7 > 0 ? BigInt(Math.round(pos.collateral * 1e7)) * cFactorBn / SCALAR - BigInt(Math.round(pos.debt * 1e7)) : 0n)
+    ? additionalBorrowStroops
+    : additionalBorrowStroops;
+
+  // Simple loop: borrow chunk, supply it, borrow more against new collateral
+  let remaining = additionalBorrowStroops;
+  while (remaining > 0n) {
+    // How much can we borrow? Based on what we just supplied
+    const canBorrow = balance > 0n ? balance * cFactorBn / SCALAR : remaining;
+    const borrow = canBorrow < remaining ? canBorrow : remaining;
+    if (borrow <= 0n) break;
+    items.push(buildRequest(asset.id, borrow, BORROW));
+    totalBorrowed += borrow;
+    remaining -= borrow;
+    // Supply what we just borrowed
+    items.push(buildRequest(asset.id, borrow, SUPPLY_COLLATERAL));
+    balance = borrow;
+  }
+
+  const requests = buildRequestsVec(items);
+  const poolContract = new Contract(pool.id);
+  const addrScVal    = new Address(userAddress).toScVal();
+  const acc          = await server.getAccount(userAddress);
+  const tx = new TransactionBuilder(acc, {
+    fee: (BigInt(BASE_FEE) * 10n).toString(),
+    networkPassphrase: NETWORK,
+  })
+    .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
+    .setTimeout(60).build();
+
+  const sim = await server.simulateTransaction(tx);
+  if (!SorobanRpc.Api.isSimulationSuccess(sim))
+    throw new Error(`Increase leverage simulation failed: ${(sim as SorobanRpc.Api.SimulateTransactionErrorResponse).error}`);
+  return SorobanRpc.assembleTransaction(tx, sim).build().toXDR();
+}
+
+/**
+ * Build requests to DECREASE leverage on an existing position.
+ * Withdraws collateral and repays debt. Net flow ≈ 0 (equity stays same).
+ * Uses submit_with_allowance netting — no wallet balance needed.
+ */
+export async function buildDecreaseLeverageXdr(
+  pool: PoolDef,
+  userAddress: string,
+  asset: AssetInfo,
+  pos: AssetPosition,
+  targetLev: number,
+): Promise<string> {
+  if (pos.equity <= 0) throw new Error("No equity in position");
+  const targetDebt = pos.equity * (targetLev - 1);
+  const debtReduction = pos.debt - targetDebt;
+  if (debtReduction <= 0) throw new Error("Target leverage is not lower than current");
+
+  const debtReductionStroops = BigInt(Math.round(debtReduction * 1e7));
+
+  // WITHDRAW collateral equal to debt reduction, then REPAY
+  // Netting means net flow ≈ 0
+  const requests = buildRequestsVec([
+    buildRequest(asset.id, debtReductionStroops, WITHDRAW_COLLATERAL),
+    buildRequest(asset.id, debtReductionStroops, REPAY),
+  ]);
+
+  const poolContract = new Contract(pool.id);
+  const addrScVal    = new Address(userAddress).toScVal();
+  const acc          = await server.getAccount(userAddress);
+  const tx = new TransactionBuilder(acc, {
+    fee: (BigInt(BASE_FEE) * 10n).toString(),
+    networkPassphrase: NETWORK,
+  })
+    .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
+    .setTimeout(60).build();
+
+  const sim = await server.simulateTransaction(tx);
+  if (!SorobanRpc.Api.isSimulationSuccess(sim))
+    throw new Error(`Decrease leverage simulation failed: ${(sim as SorobanRpc.Api.SimulateTransactionErrorResponse).error}`);
+  return SorobanRpc.assembleTransaction(tx, sim).build().toXDR();
+}
+
 // ── Resupply (add collateral to existing position) ───────────────────────
 
 /**

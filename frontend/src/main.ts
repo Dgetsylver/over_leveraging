@@ -24,6 +24,8 @@ import {
   buildCloseSubmitXdr,
   buildRepayXdr,
   buildClaimXdr,
+  buildIncreaseLeverageXdr,
+  buildDecreaseLeverageXdr,
   buildResupplyXdr,
   buildSwapBlndXdr,
   estimateBlndSwap,
@@ -308,6 +310,8 @@ function renderPosition() {
     ($("close-btn") as HTMLButtonElement).disabled = true;
     ($("repay-btn") as HTMLButtonElement).disabled = true;
     ($("resupply-btn") as HTMLButtonElement).disabled = true;
+    // Show Open mode
+    setActionCardMode("open");
     return;
   }
 
@@ -316,6 +320,8 @@ function renderPosition() {
   ($("close-btn") as HTMLButtonElement).disabled = false;
   ($("repay-btn") as HTMLButtonElement).disabled = pos.dTokens === 0n;
   ($("resupply-btn") as HTMLButtonElement).disabled = false;
+  // Show Adjust mode
+  setActionCardMode("adjust", pos);
 
   $("pos-collateral").textContent = `${fmt(pos.collateral, 4)} ${pos.asset.symbol}`;
   $("pos-debt").textContent       = `${fmt(pos.debt, 4)} ${pos.asset.symbol}`;
@@ -430,6 +436,37 @@ async function updateCompoundEstimate() {
   }
 }
 
+// ── Open / Adjust mode switching ──────────────────────────────────────────
+
+let actionMode: "open" | "adjust" = "open";
+
+function setActionCardMode(mode: "open" | "adjust", pos?: AssetPosition) {
+  actionMode = mode;
+  const isAdjust = mode === "adjust";
+
+  $("action-card-title").textContent = isAdjust ? "Adjust Position" : "Open Position";
+  $("open-deposit-group").classList.toggle("hidden", isAdjust);
+  $("adjust-current").classList.toggle("hidden", !isAdjust);
+  $("open-btn").classList.toggle("hidden", isAdjust);
+  $("adjust-btn").classList.toggle("hidden", !isAdjust);
+  $("open-disclaimer").classList.toggle("hidden", isAdjust);
+  $("adjust-disclaimer").classList.toggle("hidden", !isAdjust);
+
+  if (isAdjust && pos) {
+    $("adjust-current-lev").textContent = `${fmt(pos.leverage, 2)}×`;
+    $("leverage-label").textContent = "Target leverage";
+    // Set slider to current leverage
+    const slider = $("leverage-slider") as HTMLInputElement;
+    const numIn  = $("leverage-input")  as HTMLInputElement;
+    const curLev = Math.round(pos.leverage * 10) / 10;
+    slider.value = String(curLev);
+    numIn.value  = curLev.toFixed(1);
+  } else {
+    $("leverage-label").innerHTML = 'Leverage <span class="tooltip" title="Multiplier on your deposit. Higher leverage amplifies both yield and liquidation risk.">?</span>';
+  }
+  updatePreview();
+}
+
 // ── Leverage preview ──────────────────────────────────────────────────────────
 
 function updatePreview() {
@@ -438,15 +475,20 @@ function updatePreview() {
   const lev    = parseFloat(slider.value) || 1.1;
   // Keep the number input in sync with the slider
   if (parseFloat(numIn.value) !== lev) numIn.value = lev.toFixed(1);
-  const initial = parseFloat(($("initial-input") as HTMLInputElement).value) || 0;
   const rs      = reserves.find(r => r.asset.id === selectedAsset.id);
   const c       = rs ? rs.cFactor : selectedAsset.cFactor;
   const l       = rs?.lFactor ?? 1;
   const hf      = hfForLeverage(lev, c, l);
+  const pos     = positions.byAsset.get(selectedAsset.id);
 
-  $("prev-lev").textContent = `${lev.toFixed(2)}×`;
-  $("prev-supply").textContent      = `${fmt(initial * lev, 2)} ${selectedAsset.symbol}`;
-  $("prev-borrow").textContent      = `${fmt(initial * (lev - 1), 2)} ${selectedAsset.symbol}`;
+  // In adjust mode, use equity as the base; in open mode, use initial deposit
+  const equity  = (actionMode === "adjust" && pos) ? pos.equity : (parseFloat(($("initial-input") as HTMLInputElement).value) || 0);
+  const supply  = equity * lev;
+  const borrow  = equity * (lev - 1);
+
+  $("prev-lev").textContent         = `${lev.toFixed(2)}×`;
+  $("prev-supply").textContent      = `${fmt(supply, 2)} ${selectedAsset.symbol}`;
+  $("prev-borrow").textContent      = `${fmt(borrow, 2)} ${selectedAsset.symbol}`;
   $("prev-hf").textContent          = isFinite(hf) ? fmt(hf, 3) : "∞";
   $("prev-hf").className            = hf > 1.1 ? "hf-ok" : hf > 1.03 ? "hf-warn" : "hf-bad";
 
@@ -471,17 +513,22 @@ function updatePreview() {
     }
   }
 
-  // Liquidity check: first borrow step must fit within pool available + what your deposit unlocks.
-  // Subsequent steps are fine because each deposit replenishes capacity.
-  const totalBorrow = initial * (lev - 1);
-  const cf = rs ? rs.cFactor : selectedAsset.cFactor;
-  const firstBorrow = Math.min(initial * cf, totalBorrow);
-  const poolAvailAfterDeposit = (rs?.available ?? 0) + initial * (rs ? rs.asset.maxUtil : 0.95);
-  const liquidityOk = !rs || firstBorrow <= poolAvailAfterDeposit;
+  // Liquidity check (only for open mode and increase in adjust mode)
   const liquidityWarnEl = $("liquidity-warning") as HTMLElement;
-  if (!liquidityOk && rs) {
-    liquidityWarnEl.textContent = `⚠ First borrow (${fmt(firstBorrow, 0)}) exceeds pool available after deposit (${fmt(poolAvailAfterDeposit, 0)} ${rs.asset.symbol}). Reduce leverage or deposit.`;
-    liquidityWarnEl.classList.remove("hidden");
+  let liquidityOk = true;
+  if (actionMode === "open") {
+    const initial = equity;
+    const totalBorrow = initial * (lev - 1);
+    const cf = rs ? rs.cFactor : selectedAsset.cFactor;
+    const firstBorrow = Math.min(initial * cf, totalBorrow);
+    const poolAvailAfterDeposit = (rs?.available ?? 0) + initial * (rs ? rs.asset.maxUtil : 0.95);
+    liquidityOk = !rs || firstBorrow <= poolAvailAfterDeposit;
+    if (!liquidityOk && rs) {
+      liquidityWarnEl.textContent = `⚠ First borrow (${fmt(firstBorrow, 0)}) exceeds pool available after deposit (${fmt(poolAvailAfterDeposit, 0)} ${rs.asset.symbol}). Reduce leverage or deposit.`;
+      liquidityWarnEl.classList.remove("hidden");
+    } else {
+      liquidityWarnEl.classList.add("hidden");
+    }
   } else {
     liquidityWarnEl.classList.add("hidden");
   }
@@ -489,6 +536,17 @@ function updatePreview() {
   const safe = hf >= minHF() && selectedPool.status === 1 && liquidityOk;
   ($("hf-warning") as HTMLElement).classList.toggle("hidden", hf >= minHF() || selectedPool.status !== 1);
   ($("open-btn") as HTMLButtonElement).disabled = !safe;
+
+  // Adjust button: enabled if leverage changed and HF is safe
+  if (actionMode === "adjust" && pos) {
+    const curLev = Math.round(pos.leverage * 10) / 10;
+    const changed = Math.abs(lev - curLev) >= 0.1;
+    ($("adjust-btn") as HTMLButtonElement).disabled = !safe || !changed;
+    ($("adjust-btn") as HTMLButtonElement).textContent =
+      lev > curLev ? `Increase to ${lev.toFixed(1)}×` :
+      lev < curLev ? `Decrease to ${lev.toFixed(1)}×` :
+      "Adjust Leverage";
+  }
 }
 
 // ── Load data ─────────────────────────────────────────────────────────────────
@@ -628,6 +686,43 @@ async function claimBlnd() {
     toast(e?.message ?? "Transaction failed", "error");
   } finally {
     setLoading($("claim-btn") as HTMLButtonElement, false);
+  }
+}
+
+/** Adjust leverage on an existing position (increase or decrease). */
+async function adjustLeverage() {
+  if (!userAddress) return;
+  const pos = positions.byAsset.get(selectedAsset.id);
+  if (!pos) return;
+
+  const targetLev = parseFloat(($("leverage-slider") as HTMLInputElement).value);
+  const curLev = pos.leverage;
+  if (Math.abs(targetLev - curLev) < 0.05) { toast("Target leverage is same as current", "error"); return; }
+
+  const rs = reserves.find(r => r.asset.id === selectedAsset.id);
+  const liveAsset = rs?.asset ?? selectedAsset;
+
+  if (hfForLeverage(targetLev, liveAsset.cFactor, rs?.lFactor ?? 1) < minHF()) {
+    toast("HF too low at target leverage — reduce target", "error");
+    return;
+  }
+
+  setLoading($("adjust-btn") as HTMLButtonElement, true);
+  try {
+    if (targetLev > curLev) {
+      // Increase: borrow more + supply loop
+      const xdr = await buildIncreaseLeverageXdr(selectedPool, userAddress, liveAsset, pos, targetLev);
+      await signAndSubmit(xdr, `Increase leverage to ${targetLev.toFixed(1)}×`);
+    } else {
+      // Decrease: withdraw + repay
+      const xdr = await buildDecreaseLeverageXdr(selectedPool, userAddress, liveAsset, pos, targetLev);
+      await signAndSubmit(xdr, `Decrease leverage to ${targetLev.toFixed(1)}×`);
+    }
+    await loadAll();
+  } catch (e: any) {
+    toast(e?.message ?? "Adjust leverage failed", "error");
+  } finally {
+    setLoading($("adjust-btn") as HTMLButtonElement, false);
   }
 }
 
@@ -997,6 +1092,7 @@ $("claim-btn").addEventListener("click",      claimBlnd);
 $("max-btn").addEventListener("click",        maxDeposit);
 $("compound-btn").addEventListener("click",   claimAndConvert);
 $("resupply-btn").addEventListener("click",   resupply);
+$("adjust-btn").addEventListener("click",    adjustLeverage);
 
 ($("leverage-slider") as HTMLInputElement).addEventListener("input",  updatePreview);
 // Live preview while typing (no clamping so user can type multi-digit numbers like "10")
