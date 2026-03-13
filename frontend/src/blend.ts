@@ -718,7 +718,10 @@ export async function buildOpenPositionXdr(
 }
 
 /**
- * Build a WITHDRAW + REPAY transaction to fully close a leveraged position.
+ * Build a REPAY + WITHDRAW transaction to fully close a leveraged position.
+ *
+ * REPAY comes first to clear the debt — withdrawing collateral while debt
+ * exists triggers #1224 (MinCollateralNotMet).
  *
  * Uses submit_with_allowance which NETS transfers: for close, the net is
  * collateral − debt = equity, so the pool just sends equity to the user.
@@ -736,8 +739,8 @@ export async function buildCloseSubmitXdr(
   const withdrawAmount = pos.bTokens * pos.bRate / RATE_DEC;
   const repayAmount    = pos.dTokens * pos.dRate / RATE_DEC;
   const requests       = buildRequestsVec([
-    buildRequest(pos.asset.id, withdrawAmount, WITHDRAW_COLLATERAL),
     buildRequest(pos.asset.id, repayAmount,    REPAY),
+    buildRequest(pos.asset.id, withdrawAmount, WITHDRAW_COLLATERAL),
   ]);
 
   const poolContract = new Contract(pool.id);
