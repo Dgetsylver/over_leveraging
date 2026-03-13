@@ -332,6 +332,20 @@ function buildRequestsVec(items: xdr.ScVal[]): xdr.ScVal {
   return xdr.ScVal.scvVec(items);
 }
 
+// ── RPC retry helper ──────────────────────────────────────────────────────────
+
+async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 1000): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (attempt >= retries) throw e;
+      console.warn(`RPC call failed (attempt ${attempt + 1}/${retries + 1}), retrying in ${delayMs}ms...`);
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+}
+
 // ── Simulate helper ───────────────────────────────────────────────────────────
 
 // Read-only simulation: uses the null account so no getAccount() RPC call is needed.
@@ -341,7 +355,7 @@ async function simulate(op: xdr.Operation): Promise<any> {
     const acc = new Account(NULL_ACCOUNT, "0");
     const tx  = new TransactionBuilder(acc, { fee: BASE_FEE, networkPassphrase: _cfg.passphrase })
       .addOperation(op).setTimeout(30).build();
-    const sim = await server.simulateTransaction(tx);
+    const sim = await withRetry(() => server.simulateTransaction(tx));
     if (!SorobanRpc.Api.isSimulationSuccess(sim)) return null;
     return scValToNative(sim.result!.retval);
   } catch (e) {
@@ -1193,13 +1207,13 @@ export async function estimateBlndSwap(
 
 export async function submitSignedXdr(signedXdr: string): Promise<string> {
   const tx     = TransactionBuilder.fromXDR(signedXdr, _cfg.passphrase);
-  const result = await server.sendTransaction(tx);
+  const result = await withRetry(() => server.sendTransaction(tx));
   if (result.status === "ERROR")
     throw new Error(`Send failed: ${result.errorResult?.toXDR("base64")}`);
 
   for (let i = 0; i < 30; i++) {
     await new Promise(r => setTimeout(r, 3000));
-    const poll = await server.getTransaction(result.hash);
+    const poll = await withRetry(() => server.getTransaction(result.hash));
     if (poll.status === "SUCCESS") return result.hash;
     if (poll.status === "FAILED")
       throw new Error(`On-chain failure: ${poll.resultXdr?.toXDR("base64")}`);

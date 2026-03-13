@@ -806,9 +806,7 @@ main { flex: 1; max-width: 1060px; width: 100%; margin: 0 auto; padding: 24px 28
 
 @media (max-width: 900px) {
   .hamburger-btn { display: flex; }
-  .sidebar {
-    transform: translateX(-100%);
-  }
+  .sidebar { transform: translateX(-100%); }
   .sidebar.open { transform: translateX(0); }
   .main-wrap { margin-left: 0; }
   .two-col { grid-template-columns: 1fr; }
@@ -816,6 +814,8 @@ main { flex: 1; max-width: 1060px; width: 100%; margin: 0 auto; padding: 24px 28
   .apr-grid { grid-template-columns: 1fr; }
   .mobile-card-tabs { display: flex; }
   .two-col .card.mobile-hidden { display: none; }
+  .overview-totals { grid-template-columns: 1fr; }
+  .overview-positions { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 600px) {
@@ -824,6 +824,53 @@ main { flex: 1; max-width: 1060px; width: 100%; margin: 0 auto; padding: 24px 28
   main { padding: 16px 14px 40px; }
   .asset-tabs { gap: 2px; }
   .asset-tab { padding: 5px 10px; font-size: 12px; }
+  .toast-stack { bottom: 12px; right: 12px; left: 12px; }
+  .toast { max-width: 100%; }
+  .tx-stepper { left: 12px; right: 12px; transform: none; }
+  .portfolio-summary { flex-wrap: wrap; }
+  .connect-prompt { padding: 60px 16px; }
+  .connect-prompt-logo { width: 64px; height: 64px; }
+}
+
+@media (max-width: 480px) {
+  /* Grids to single column */
+  .stats-row { grid-template-columns: 1fr; }
+  .position-grid { grid-template-columns: 1fr; }
+  .vault-pos-grid { grid-template-columns: 1fr; }
+
+  /* Cards & spacing */
+  .card { padding: 16px; }
+  .form-group { margin-bottom: 14px; }
+
+  /* Swap inputs stack */
+  .swap-input-row { flex-direction: column; }
+  .swap-asset-select { width: 100%; }
+
+  /* Leverage slider */
+  .slider-row { flex-wrap: wrap; }
+  .leverage-num-input { width: 100%; margin-top: 4px; }
+  .slider-zones { flex-wrap: wrap; gap: 4px; }
+  .slider-zone { font-size: 9px; padding: 2px 4px; }
+
+  /* Wallet area */
+  #wallet-area { flex-wrap: wrap; gap: 6px; }
+  .btn-connect { font-size: 12px; padding: 6px 12px; }
+
+  /* Slippage */
+  .slippage-opt { padding: 2px 6px; font-size: 11px; }
+  .slippage-custom input { width: 60px; font-size: 11px; }
+
+  /* APY chart */
+  .apy-chart svg { height: 60px; }
+  .apy-chart-label { font-size: 7px; }
+
+  /* Disclaimer modal */
+  .disclaimer-modal { padding: 20px 16px; max-width: 100%; }
+  .disclaimer-modal h2 { font-size: 18px; }
+
+  /* Input max button */
+  .input { padding-right: 80px; }
+  .input-max-btn { right: 40px; font-size: 10px; padding: 2px 6px; }
 }
 
 /* ── Overview (cross-protocol dashboard) ────────────────────────────────── */
@@ -883,11 +930,6 @@ main { flex: 1; max-width: 1060px; width: 100%; margin: 0 auto; padding: 24px 28
 
 .overview-empty {
   text-align: center; padding: 40px 20px; color: var(--text-3); font-size: 14px;
-}
-
-@media (max-width: 600px) {
-  .overview-totals { grid-template-columns: 1fr; }
-  .overview-positions { grid-template-columns: 1fr; }
 }
 
 /* ── Vault view ─────────────────────────────────────────────────────────── */
