@@ -44,6 +44,13 @@
           <span class="logo-text">Blend<span class="logo-accent">Lev</span></span>
         </div>
         <nav class="sidebar-nav">
+          <!-- Dashboard overview -->
+          <div class="protocol-section">
+            <button class="protocol-btn" id="proto-overview">
+              <span class="protocol-icon">&#9632;</span>
+              Dashboard
+            </button>
+          </div>
           <!-- Protocol: Blend -->
           <div class="protocol-section">
             <button class="protocol-btn active" id="proto-blend">
@@ -60,6 +67,13 @@
               <span class="coming-soon-badge">Soon</span>
             </button>
           </div>
+          <!-- Vault -->
+          <div class="protocol-section">
+            <button class="protocol-btn" id="proto-vault">
+              <span class="protocol-icon">&#9878;</span>
+              Vault
+            </button>
+          </div>
           <!-- Swap -->
           <div class="protocol-section">
             <button class="protocol-btn" id="proto-swap">
@@ -70,6 +84,7 @@
         </nav>
       </div>
       <div class="sidebar-bottom">
+        <button id="network-toggle" class="sidebar-btn network-toggle" data-tip="Switch between Mainnet and Testnet">Mainnet</button>
         <button id="expert-toggle" class="sidebar-btn expert-toggle" data-tip="Expert mode: lower minimum HF to 1.005">Expert</button>
         <button id="theme-toggle" class="sidebar-btn theme-toggle" data-tip="Toggle light/dark mode">&#9790;</button>
       </div>
@@ -99,6 +114,14 @@
         </div>
       </header>
 
+      <!-- Testnet banner -->
+      <div id="testnet-banner" class="testnet-banner hidden">
+        <span>&#9888; Testnet Mode</span>
+        <span class="testnet-banner-sep">&middot;</span>
+        <span class="testnet-banner-hint">Using Stellar Testnet &mdash; no real funds at risk</span>
+        <button id="fund-testnet-btn" class="btn btn-sm testnet-fund-btn" data-tip="Fund with Friendbot XLM, open USDC trustline, swap XLM for USDC">Fund Wallet</button>
+      </div>
+
       <main>
 
         <!-- Connect prompt -->
@@ -108,6 +131,35 @@
           <p>Manage leverage positions on Blend Protocol pools on Stellar.</p>
           <button class="btn btn-primary btn-lg" onclick="document.getElementById('connect-btn').click()">Connect Wallet</button>
           <button id="demo-btn" class="btn btn-ghost" style="margin-top: 12px">Try Demo (no wallet)</button>
+        </div>
+
+        <!-- Overview (cross-protocol dashboard) -->
+        <div id="overview-view" class="hidden">
+          <div class="overview-header">
+            <h2>Portfolio Overview</h2>
+            <button id="overview-refresh-btn" class="btn btn-ghost btn-sm">&#8635;</button>
+          </div>
+
+          <!-- Aggregate totals -->
+          <div class="overview-totals">
+            <div class="stat-card">
+              <span class="stat-label">Total Equity</span>
+              <span class="stat-value mono" id="ov-total-equity">--</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Total Debt</span>
+              <span class="stat-value mono" id="ov-total-debt">--</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Positions</span>
+              <span class="stat-value mono" id="ov-total-count">0</span>
+            </div>
+          </div>
+
+          <!-- Protocol sections -->
+          <div id="ov-protocols"></div>
+
+          <p class="overview-empty hidden" id="ov-empty">No active positions across any protocol. Open a position to see it here.</p>
         </div>
 
         <!-- Dashboard -->
@@ -292,10 +344,27 @@
                 <span class="balance-hint">Wallet: <span id="asset-balance">—</span></span>
               </div>
 
+              <!-- Adjust mode: sub-tab toggle -->
+              <div id="adjust-tabs" class="adjust-tabs hidden">
+                <button class="adjust-tab active" data-adjust="leverage">Adjust Leverage</button>
+                <button class="adjust-tab" data-adjust="add-funds">Add Funds</button>
+              </div>
+
               <!-- Adjust mode: current leverage indicator -->
               <div id="adjust-current" class="adjust-current hidden">
                 <span class="adjust-current-label">Current leverage</span>
                 <span class="adjust-current-value mono" id="adjust-current-lev">—</span>
+              </div>
+
+              <!-- Add funds mode: deposit input (reuses same IDs as open for deposit amount) -->
+              <div id="add-funds-group" class="form-group hidden">
+                <label>Additional deposit</label>
+                <div class="input-wrap">
+                  <input type="number" id="add-funds-input" class="input mono" placeholder="500" min="0" step="any" />
+                  <button id="add-funds-max-btn" class="btn btn-ghost btn-sm input-max-btn">Max</button>
+                  <span class="input-suffix" id="add-funds-symbol">—</span>
+                </div>
+                <span class="balance-hint">Wallet: <span id="add-funds-balance">—</span></span>
               </div>
 
               <div class="form-group">
@@ -337,8 +406,10 @@
               </div>
               <button id="open-btn" class="btn btn-primary btn-lg">Open Position</button>
               <button id="adjust-btn" class="btn btn-primary btn-lg hidden">Adjust Leverage</button>
+              <button id="add-funds-btn" class="btn btn-primary btn-lg hidden">Add Funds</button>
               <p class="disclaimer" id="open-disclaimer">Two transactions: (1) token approve, (2) <code>submit_with_allowance</code>.</p>
               <p class="disclaimer hidden" id="adjust-disclaimer">Adjusts leverage by borrowing more (increase) or withdrawing &amp; repaying (decrease).</p>
+              <p class="disclaimer hidden" id="add-funds-disclaimer">Deposits additional funds into your existing position at the selected leverage. Two transactions: approve + submit.</p>
             </section>
 
           </div><!-- .two-col -->
@@ -403,6 +474,73 @@
 
             <button id="swap-btn" class="btn btn-primary btn-lg" disabled>Get Quote</button>
             <p class="disclaimer">Swaps are executed through <a href="https://stellar.broker" target="_blank" rel="noopener">Stellar Broker</a> for best-route aggregation across Stellar DEXes.</p>
+          </section>
+        </div>
+
+        <!-- Vault view -->
+        <div id="vault-view" class="hidden">
+          <section class="card vault-card">
+            <div class="card-header">
+              <h2>Leveraged USDC Vault</h2>
+              <span class="vault-badge">DeFindex</span>
+            </div>
+
+            <!-- Vault stats -->
+            <div id="vault-stats" class="vault-stats">
+              <div class="stats-row">
+                <div class="stat-card">
+                  <span class="stat-label">Total TVL</span>
+                  <span class="stat-value mono" id="vault-tvl">--</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Share price</span>
+                  <span class="stat-value mono" id="vault-share-price">--</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Strategy HF</span>
+                  <span class="stat-value" id="vault-hf">--</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- User position -->
+            <div id="vault-user-pos" class="vault-user-pos hidden">
+              <h3>Your Position</h3>
+              <div class="position-grid vault-pos-grid">
+                <div class="position-metric">
+                  <span class="metric-label">dfToken balance</span>
+                  <span class="metric-value mono" id="vault-user-shares">--</span>
+                </div>
+                <div class="position-metric">
+                  <span class="metric-label">Current value</span>
+                  <span class="metric-value mono" id="vault-user-value">--</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Deposit -->
+            <div class="vault-actions">
+              <div class="form-group">
+                <label>Deposit USDC</label>
+                <div class="input-wrap">
+                  <input type="number" id="vault-deposit-input" class="input mono" placeholder="100" min="0" step="any" />
+                  <span class="input-suffix">USDC</span>
+                </div>
+                <span class="balance-hint">Wallet: <span id="vault-wallet-balance">--</span></span>
+              </div>
+              <button id="vault-deposit-btn" class="btn btn-primary btn-lg" disabled>Deposit</button>
+
+              <div class="form-group" style="margin-top:20px">
+                <label>Withdraw USDC</label>
+                <div class="input-wrap">
+                  <input type="number" id="vault-withdraw-input" class="input mono" placeholder="100" min="0" step="any" />
+                  <span class="input-suffix">USDC</span>
+                </div>
+              </div>
+              <button id="vault-withdraw-btn" class="btn btn-secondary btn-lg" disabled>Withdraw</button>
+            </div>
+
+            <p class="disclaimer">Deposits are managed by the Blend Leverage Strategy via <a href="https://defindex.io" target="_blank" rel="noopener">DeFindex</a>. Leverage loops are executed atomically; the vault manages position health automatically.</p>
           </section>
         </div>
 

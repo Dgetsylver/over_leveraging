@@ -10,11 +10,21 @@ import { LobstrModule }      from "@creit-tech/stellar-wallets-kit/modules/lobst
 import { HanaModule }        from "@creit-tech/stellar-wallets-kit/modules/hana";
 import { Networks }          from "@creit-tech/stellar-wallets-kit/types";
 import { estimateSwap }      from "@stellar-broker/client";
+import {
+  Asset,
+  Horizon,
+  Operation,
+  TransactionBuilder,
+} from "@stellar/stellar-sdk";
 
 import {
-  KNOWN_POOLS,
+  getKnownPools,
   getPoolAssets,
-  NETWORK,
+  getNetworkPassphrase,
+  getActiveNetwork,
+  getHorizonUrl,
+  getBlndId,
+  setNetwork,
   fetchAllReserves,
   fetchUserPositions,
   fetchAssetBalance,
@@ -33,12 +43,26 @@ import {
   submitClassicXdr,
   hfForLeverage,
   maxLeverageFor,
+  type NetworkMode,
   type AssetInfo,
   type PoolDef,
   type ReserveStats,
   type AssetPosition,
   type UserPositions,
 } from "./blend.ts";
+
+import {
+  VAULTS,
+  fetchVaultStats,
+  fetchUserVaultBalance,
+  buildVaultDepositXdr,
+  buildVaultWithdrawXdr,
+  formatUsd,
+  formatHf,
+  type VaultConfig,
+  type VaultStats,
+  type UserVaultPosition,
+} from "./defindex.ts";
 
 // ── Wallet kit ────────────────────────────────────────────────────────────────
 
@@ -58,9 +82,152 @@ StellarWalletsKit.init({
 let userAddress: string | null = null;
 let reserves:    ReserveStats[]  = [];
 let positions:   UserPositions   = { byAsset: new Map() };
-let selectedPool: PoolDef        = KNOWN_POOLS[0]; // default: Etherfuse
+let selectedPool: PoolDef        = getKnownPools()[0]; // default: Etherfuse
 let assets: AssetInfo[]          = getPoolAssets(selectedPool);
 let selectedAsset: AssetInfo     = assets[2]; // default: CETES (index 2 in Etherfuse)
+
+// ── Network switching ────────────────────────────────────────────────────────
+
+async function switchNetwork(net: NetworkMode) {
+  // Disconnect wallet first
+  if (userAddress && !demoMode) {
+    await StellarWalletsKit.disconnect();
+  }
+  userAddress = null;
+  localStorage.removeItem("walletAddress");
+
+  // Switch blend.ts network config
+  setNetwork(net);
+  localStorage.setItem("networkMode", net);
+
+  // Reinitialize wallet kit for new network
+  StellarWalletsKit.init({
+    modules: [
+      new FreighterModule(),
+      new xBullModule(),
+      new AlbedoModule(),
+      new LobstrModule(),
+      new HanaModule(),
+    ],
+    network: net === "testnet" ? Networks.TESTNET : Networks.PUBLIC,
+  });
+
+  // Reset state
+  reserves = [];
+  positions = { byAsset: new Map() };
+  demoMode = false;
+  selectedPool = getKnownPools()[0];
+  assets = getPoolAssets(selectedPool);
+  selectedAsset = assets[0];
+
+  // Update UI
+  const btn = $("network-toggle");
+  btn.textContent = net === "testnet" ? "Testnet" : "Mainnet";
+  btn.classList.toggle("testnet-active", net === "testnet");
+  $("testnet-banner").classList.toggle("hidden", net !== "testnet");
+  ($("fund-testnet-btn") as HTMLButtonElement).disabled = false;
+  ($("fund-testnet-btn") as HTMLButtonElement).textContent = "Fund Wallet";
+
+  // Reset view
+  $("connect-btn").classList.remove("hidden");
+  $("wallet-connected").classList.add("hidden");
+  $("connect-prompt").classList.remove("hidden");
+  $("dashboard").classList.add("hidden");
+  $("overview-view").classList.add("hidden");
+  switchView("leverage");
+  buildPoolTabs();
+  buildAssetTabs();
+  renderPoolFooter();
+  updatePreview();
+}
+
+// ── Fund testnet wallet ──────────────────────────────────────────────────────
+
+const TESTNET_USDC_ISSUER = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
+
+async function fundTestnetWallet() {
+  if (!userAddress || getActiveNetwork() !== "testnet") return;
+  const btn = $("fund-testnet-btn") as HTMLButtonElement;
+  btn.disabled = true;
+  btn.textContent = "Funding...";
+
+  try {
+    // Step 1: Friendbot — fund with 10,000 XLM
+    toast("Requesting testnet XLM from Friendbot...", "info");
+    const fbRes = await fetch(`https://friendbot.stellar.org?addr=${userAddress}`);
+    if (!fbRes.ok) {
+      const body = await fbRes.text();
+      // Already funded is OK
+      if (!body.includes("createAccountAlreadyExist")) {
+        throw new Error(`Friendbot failed: ${fbRes.status}`);
+      }
+      toast("Account already funded with XLM", "info");
+    } else {
+      toast("Received testnet XLM from Friendbot!", "success");
+    }
+
+    // Step 2: Open USDC trustline + swap XLM → USDC via path payment
+    toast("Opening USDC trustline and acquiring USDC...", "info");
+    const usdcAsset = new Asset("USDC", TESTNET_USDC_ISSUER);
+
+    const horizonServer = new Horizon.Server(getHorizonUrl());
+    const acc = await horizonServer.loadAccount(userAddress);
+
+    // Check if trustline already exists
+    const hasTrustline = acc.balances.some(
+      (b: any) => b.asset_code === "USDC" && b.asset_issuer === TESTNET_USDC_ISSUER
+    );
+
+    const txBuilder = new TransactionBuilder(acc, {
+      fee: "10000",
+      networkPassphrase: getNetworkPassphrase(),
+    }).setTimeout(60);
+
+    if (!hasTrustline) {
+      txBuilder.addOperation(Operation.changeTrust({ asset: usdcAsset, limit: "1000000" }));
+    }
+
+    // Path payment: swap 1000 XLM → USDC (strict send, accept any amount)
+    txBuilder.addOperation(
+      Operation.pathPaymentStrictSend({
+        sendAsset: Asset.native(),
+        sendAmount: "1000",
+        destination: userAddress,
+        destAsset: usdcAsset,
+        destMin: "0.0000001", // accept any amount
+        path: [],
+      })
+    );
+
+    const tx = txBuilder.build();
+
+    // Sign via wallet kit
+    const { signedTxXdr } = await StellarWalletsKit.signTransaction(tx.toXDR(), {
+      networkPassphrase: getNetworkPassphrase(),
+      address: userAddress,
+    });
+    const signedTx = TransactionBuilder.fromXDR(signedTxXdr, getNetworkPassphrase());
+    const result = await horizonServer.submitTransaction(signedTx);
+    if (!(result as any).successful) {
+      throw new Error("Transaction failed");
+    }
+
+    toast("Testnet wallet funded! USDC trustline opened and tokens acquired.", "success");
+    // Reload pool data
+    if (activeView === "leverage") await loadAll();
+  } catch (e: any) {
+    const msg = e?.message ?? String(e);
+    // If path payment fails (no liquidity), still report trustline success
+    if (msg.includes("PATH_PAYMENT") || msg.includes("path")) {
+      toast("USDC trustline opened but no DEX liquidity to swap. You may need to acquire USDC manually.", "info");
+    } else {
+      toast(`Fund failed: ${msg.slice(0, 150)}`, "error");
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Fund Wallet";
+  }
+}
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
@@ -101,7 +268,7 @@ document.getElementById("disclaimer-accept")!.addEventListener("click", () => {
 
 // ── Active view (leverage | swap) ────────────────────────────────────────
 
-type AppView = "leverage" | "swap";
+type AppView = "overview" | "leverage" | "swap" | "vault";
 let activeView: AppView = "leverage";
 
 // ── Expert mode ──────────────────────────────────────────────────────────────
@@ -294,7 +461,7 @@ async function signAndSubmit(xdrStr: string, label: string, stepIndex?: number):
   if (stepIndex !== undefined) updateTxStep(stepIndex, "active");
   toast(`Sign "${label}" in your wallet\u2026`, "info");
   const { signedTxXdr } = await StellarWalletsKit.signTransaction(xdrStr, {
-    networkPassphrase: NETWORK,
+    networkPassphrase: getNetworkPassphrase(),
     address: userAddress!,
   });
   toast(`Submitting "${label}"\u2026`, "info");
@@ -310,7 +477,7 @@ async function signAndSubmit(xdrStr: string, label: string, stepIndex?: number):
 function buildPoolTabs() {
   const container = $("pool-tabs");
   container.innerHTML = "";
-  KNOWN_POOLS.forEach(pool => {
+  getKnownPools().forEach(pool => {
     const btn = document.createElement("button");
     const isFrozen = pool.status !== 1;
     btn.className = `pool-tab ${pool.id === selectedPool.id ? "active" : ""} ${isFrozen ? "pool-tab-frozen" : ""}`;
@@ -769,23 +936,34 @@ async function updateCompoundEstimate() {
 
 // ── Open / Adjust mode switching ──────────────────────────────────────────
 
-let actionMode: "open" | "adjust" = "open";
+let actionMode: "open" | "adjust" | "add-funds" = "open";
 
 function setActionCardMode(mode: "open" | "adjust", pos?: AssetPosition) {
-  actionMode = mode;
+  // When switching to adjust, default to the "adjust leverage" sub-tab
+  actionMode = mode === "adjust" ? "adjust" : "open";
   const isAdjust = mode === "adjust";
 
   $("action-card-title").textContent = isAdjust ? "Adjust Position" : "Open Position";
+  $("adjust-tabs").classList.toggle("hidden", !isAdjust);
   $("open-deposit-group").classList.toggle("hidden", isAdjust);
   $("adjust-current").classList.toggle("hidden", !isAdjust);
+  $("add-funds-group").classList.add("hidden");
   $("open-btn").classList.toggle("hidden", isAdjust);
   $("adjust-btn").classList.toggle("hidden", !isAdjust);
+  $("add-funds-btn").classList.add("hidden");
   $("open-disclaimer").classList.toggle("hidden", isAdjust);
   $("adjust-disclaimer").classList.toggle("hidden", !isAdjust);
+  $("add-funds-disclaimer").classList.add("hidden");
+
+  // Reset adjust sub-tabs to "Adjust Leverage"
+  document.querySelectorAll<HTMLButtonElement>(".adjust-tab").forEach(t => {
+    t.classList.toggle("active", t.dataset.adjust === "leverage");
+  });
 
   if (isAdjust && pos) {
     $("adjust-current-lev").textContent = `${fmt(pos.leverage, 2)}\u00D7`;
     $("leverage-label").textContent = "Target leverage";
+    $("add-funds-symbol").textContent = pos.asset.symbol;
     // Set slider to current leverage
     const slider = $("leverage-slider") as HTMLInputElement;
     const numIn  = $("leverage-input")  as HTMLInputElement;
@@ -795,6 +973,53 @@ function setActionCardMode(mode: "open" | "adjust", pos?: AssetPosition) {
   } else {
     $("leverage-label").innerHTML = 'Leverage <span class="tooltip" data-tip="Multiplier on your deposit. Higher leverage amplifies both yield and liquidation risk.">?</span>';
     initTooltips(); // Re-init tooltips for newly created elements
+  }
+  updatePreview();
+}
+
+function switchAdjustSubTab(sub: "leverage" | "add-funds") {
+  const pos = positions.byAsset.get(selectedAsset.id);
+  if (!pos) return;
+
+  actionMode = sub === "leverage" ? "adjust" : "add-funds";
+
+  document.querySelectorAll<HTMLButtonElement>(".adjust-tab").forEach(t => {
+    t.classList.toggle("active", t.dataset.adjust === sub);
+  });
+
+  const isAddFunds = sub === "add-funds";
+  $("adjust-current").classList.toggle("hidden", isAddFunds);
+  $("add-funds-group").classList.toggle("hidden", !isAddFunds);
+  $("adjust-btn").classList.toggle("hidden", isAddFunds);
+  $("add-funds-btn").classList.toggle("hidden", !isAddFunds);
+  $("adjust-disclaimer").classList.toggle("hidden", isAddFunds);
+  $("add-funds-disclaimer").classList.toggle("hidden", !isAddFunds);
+
+  if (isAddFunds) {
+    $("action-card-title").textContent = "Add Funds";
+    $("leverage-label").innerHTML = 'Leverage <span class="tooltip" data-tip="Leverage for the new deposit. This deposit is added on top of your existing position.">?</span>';
+    // Default leverage to current position leverage
+    const slider = $("leverage-slider") as HTMLInputElement;
+    const numIn  = $("leverage-input")  as HTMLInputElement;
+    const curLev = Math.round(pos.leverage * 10) / 10;
+    slider.value = String(curLev);
+    numIn.value  = curLev.toFixed(1);
+    $("add-funds-symbol").textContent = selectedAsset.symbol;
+    // Fetch wallet balance for add-funds display
+    if (userAddress) {
+      fetchAssetBalance(userAddress, selectedAsset.id).then(bal => {
+        $("add-funds-balance").textContent = `${fmt(bal, 4)} ${selectedAsset.symbol}`;
+      }).catch(() => {});
+    }
+    initTooltips();
+  } else {
+    $("action-card-title").textContent = "Adjust Position";
+    $("leverage-label").textContent = "Target leverage";
+    const slider = $("leverage-slider") as HTMLInputElement;
+    const numIn  = $("leverage-input")  as HTMLInputElement;
+    const curLev = Math.round(pos.leverage * 10) / 10;
+    slider.value = String(curLev);
+    numIn.value  = curLev.toFixed(1);
   }
   updatePreview();
 }
@@ -813,8 +1038,10 @@ function updatePreview() {
   const hf      = hfForLeverage(lev, c, l);
   const pos     = positions.byAsset.get(selectedAsset.id);
 
-  // In adjust mode, use equity as the base; in open mode, use initial deposit
-  const equity  = (actionMode === "adjust" && pos) ? pos.equity : (parseFloat(($("initial-input") as HTMLInputElement).value) || 0);
+  // In adjust mode, use equity as the base; in add-funds mode, use the add-funds input; in open mode, use initial deposit
+  const equity  = (actionMode === "adjust" && pos) ? pos.equity
+    : actionMode === "add-funds" ? (parseFloat(($("add-funds-input") as HTMLInputElement).value) || 0)
+    : (parseFloat(($("initial-input") as HTMLInputElement).value) || 0);
   const supply  = equity * lev;
   const borrow  = equity * (lev - 1);
 
@@ -860,10 +1087,10 @@ function updatePreview() {
     z.classList.toggle("active", !!active);
   });
 
-  // Liquidity check (only for open mode and increase in adjust mode)
+  // Liquidity check (for open and add-funds modes)
   const liquidityWarnEl = $("liquidity-warning") as HTMLElement;
   let liquidityOk = true;
-  if (actionMode === "open") {
+  if (actionMode === "open" || actionMode === "add-funds") {
     const initial = equity;
     const totalBorrow = initial * (lev - 1);
     const cf = rs ? rs.cFactor : selectedAsset.cFactor;
@@ -893,6 +1120,15 @@ function updatePreview() {
       lev > curLev ? `Increase to ${lev.toFixed(1)}\u00D7` :
       lev < curLev ? `Decrease to ${lev.toFixed(1)}\u00D7` :
       "Adjust Leverage";
+  }
+
+  // Add Funds button: enabled if amount > 0 and HF is safe
+  if (actionMode === "add-funds") {
+    const addAmt = parseFloat(($("add-funds-input") as HTMLInputElement).value) || 0;
+    ($("add-funds-btn") as HTMLButtonElement).disabled = !safe || addAmt <= 0;
+    ($("add-funds-btn") as HTMLButtonElement).textContent = addAmt > 0
+      ? `Add ${fmt(addAmt, 2)} ${selectedAsset.symbol} at ${lev.toFixed(1)}\u00D7`
+      : "Add Funds";
   }
 }
 
@@ -1100,6 +1336,55 @@ async function adjustLeverage() {
   }
 }
 
+/** Add funds: deposit additional capital into an existing position at a chosen leverage. */
+async function addFundsToPosition() {
+  if (!userAddress) return;
+  if (demoMode) { toast("Demo mode \u2014 connect a real wallet to transact", "info"); return; }
+  if (selectedPool.status !== 1) { toast("Pool is frozen \u2014 cannot add funds", "error"); return; }
+  const pos = positions.byAsset.get(selectedAsset.id);
+  if (!pos) return;
+
+  const additional = parseFloat(($("add-funds-input") as HTMLInputElement).value);
+  const leverage   = parseFloat(($("leverage-slider") as HTMLInputElement).value);
+  if (isNaN(additional) || additional <= 0) { toast("Enter a valid amount", "error"); return; }
+
+  const rs = reserves.find(r => r.asset.id === selectedAsset.id);
+  const liveAsset = rs?.asset ?? selectedAsset;
+
+  if (hfForLeverage(leverage, liveAsset.cFactor, rs?.lFactor ?? 1) < minHF()) {
+    toast("HF too low \u2014 reduce leverage", "error"); return;
+  }
+
+  const additionalStroops = BigInt(Math.round(additional * 1e7));
+  setLoading($("add-funds-btn") as HTMLButtonElement, true);
+  showTxStepper(["Approve", "Submit"]);
+  try {
+    const approveXdr = await buildApproveXdr(selectedPool, userAddress, liveAsset.id, additionalStroops + 1n);
+    await signAndSubmit(approveXdr, `Approve ${liveAsset.symbol}`, 0);
+    const submitXdr = await buildOpenPositionXdr(selectedPool, userAddress, liveAsset, additionalStroops, leverage);
+    await signAndSubmit(submitXdr, `Add ${fmt(additional, 2)} ${liveAsset.symbol} at ${leverage.toFixed(1)}\u00D7`, 1);
+    hideTxStepper();
+    // Update PnL entry: add to existing deposit
+    const existingPnl = getPnlEntry(liveAsset.id, selectedPool.id);
+    const newDeposit = (existingPnl?.deposit ?? 0) + additional;
+    savePnlEntry(liveAsset.id, selectedPool.id, newDeposit);
+    ($("add-funds-input") as HTMLInputElement).value = "";
+    await loadAll();
+  } catch (e: any) {
+    markStepperError(2);
+    const msg: string = e?.message ?? "Transaction failed";
+    if (msg.includes("#1205") || msg.includes("InvalidHf")) {
+      toast("Health factor too low \u2014 reduce leverage.", "error");
+    } else if (msg.includes("#1207") || msg.includes("InvalidUtilRate")) {
+      toast("Pool utilization limit reached \u2014 not enough liquidity. Reduce leverage or deposit.", "error");
+    } else {
+      toast(msg.slice(0, 200), "error");
+    }
+  } finally {
+    setLoading($("add-funds-btn") as HTMLButtonElement, false);
+  }
+}
+
 /** Resupply: deposit entire wallet balance of the position asset as extra collateral. */
 async function resupply() {
   if (!userAddress) return;
@@ -1152,7 +1437,7 @@ async function claimAndConvert() {
     await signAndSubmit(claimXdr, "Claim BLND", 0);
 
     // Check actual BLND balance after claim
-    const blndBalance = await fetchAssetBalance(userAddress, "CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY");
+    const blndBalance = await fetchAssetBalance(userAddress, getBlndId());
     if (blndBalance <= 0) { toast("No BLND to convert", "error"); hideTxStepper(1000); await loadAll(); return; }
 
     // Step 2: Swap BLND -> position asset via DEX path payment (classic tx)
@@ -1167,7 +1452,7 @@ async function claimAndConvert() {
     // Sign via wallet kit
     toast(`Sign swap in your wallet\u2026`, "info");
     const { signedTxXdr } = await StellarWalletsKit.signTransaction(swapXdr, {
-      networkPassphrase: NETWORK,
+      networkPassphrase: getNetworkPassphrase(),
       address: userAddress!,
     });
     toast(`Submitting swap\u2026`, "info");
@@ -1203,7 +1488,7 @@ function showConnected() {
 
 async function connect() {
   try {
-    const result = await StellarWalletsKit.authModal({ network: Networks.PUBLIC });
+    const result = await StellarWalletsKit.authModal({ network: getActiveNetwork() === "testnet" ? Networks.TESTNET : Networks.PUBLIC });
     userAddress  = result.address;
     localStorage.setItem("walletAddress", userAddress);
     showConnected();
@@ -1219,7 +1504,7 @@ async function connect() {
 /** Re-open wallet modal to switch to a different account without a full page reload. */
 async function switchWallet() {
   try {
-    const result = await StellarWalletsKit.authModal({ network: Networks.PUBLIC });
+    const result = await StellarWalletsKit.authModal({ network: getActiveNetwork() === "testnet" ? Networks.TESTNET : Networks.PUBLIC });
     if (result.address === userAddress) return;
     userAddress = result.address;
     localStorage.setItem("walletAddress", userAddress);
@@ -1249,33 +1534,49 @@ async function disconnect() {
 
 function switchView(view: AppView) {
   activeView = view;
+  const overviewBtn = $("proto-overview");
   const blendBtn = $("proto-blend");
   const swapBtn  = $("proto-swap");
+  const vaultBtn = $("proto-vault");
+  overviewBtn.classList.toggle("active", view === "overview");
   blendBtn.classList.toggle("active", view === "leverage");
   swapBtn.classList.toggle("active", view === "swap");
+  vaultBtn.classList.toggle("active", view === "vault");
 
   // Toggle pool tabs visibility
   $("pool-tabs").style.display = view === "leverage" ? "" : "none";
 
-  if (view === "leverage") {
-    $("swap-view").classList.add("hidden");
+  // Hide all views first
+  $("overview-view").classList.add("hidden");
+  $("swap-view").classList.add("hidden");
+  $("vault-view").classList.add("hidden");
+  $("dashboard").classList.add("hidden");
+  $("connect-prompt").classList.add("hidden");
+
+  if (view === "overview") {
+    $("asset-tabs").style.display = "none";
     if (userAddress) {
-      $("dashboard").classList.remove("hidden");
-      $("connect-prompt").classList.add("hidden");
+      $("overview-view").classList.remove("hidden");
+      loadOverview();
     } else {
-      $("dashboard").classList.add("hidden");
       $("connect-prompt").classList.remove("hidden");
     }
-    // Show asset tabs & header elements for leverage
+  } else if (view === "leverage") {
+    if (userAddress) {
+      $("dashboard").classList.remove("hidden");
+    } else {
+      $("connect-prompt").classList.remove("hidden");
+    }
     $("asset-tabs").style.display = "";
-  } else {
-    $("dashboard").classList.add("hidden");
-    $("connect-prompt").classList.add("hidden");
+  } else if (view === "swap") {
     $("swap-view").classList.remove("hidden");
-    // Hide asset tabs in swap mode
     $("asset-tabs").style.display = "none";
     populateSwapAssets();
     updateSwapBtn();
+  } else if (view === "vault") {
+    $("vault-view").classList.remove("hidden");
+    $("asset-tabs").style.display = "none";
+    refreshVaultView();
   }
   closeDrawer();
 }
@@ -1480,9 +1781,20 @@ $("theme-toggle").addEventListener("click", () => {
   applyTheme(next);
 });
 
+// Network toggle
+$("network-toggle").addEventListener("click", () => {
+  const next: NetworkMode = getActiveNetwork() === "mainnet" ? "testnet" : "mainnet";
+  switchNetwork(next);
+});
+
+// Fund testnet wallet
+$("fund-testnet-btn").addEventListener("click", fundTestnetWallet);
+
 // Protocol nav
+$("proto-overview").addEventListener("click", () => switchView("overview"));
 $("proto-blend").addEventListener("click", () => switchView("leverage"));
 $("proto-swap").addEventListener("click",  () => switchView("swap"));
+$("proto-vault").addEventListener("click", () => switchView("vault"));
 
 // Mobile hamburger (#5)
 $("hamburger-btn").addEventListener("click", () => {
@@ -1576,6 +1888,36 @@ $("max-btn").addEventListener("click",        maxDeposit);
 $("compound-btn").addEventListener("click",   claimAndConvert);
 $("resupply-btn").addEventListener("click",   resupply);
 $("adjust-btn").addEventListener("click",    adjustLeverage);
+$("add-funds-btn").addEventListener("click", addFundsToPosition);
+
+// Adjust sub-tabs (Adjust Leverage / Add Funds)
+document.querySelectorAll<HTMLButtonElement>(".adjust-tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    switchAdjustSubTab(btn.dataset.adjust as "leverage" | "add-funds");
+  });
+});
+
+// Add Funds input events
+($("add-funds-input") as HTMLInputElement).addEventListener("input", () => {
+  refreshAddFundsBalance();
+  updatePreview();
+});
+$("add-funds-max-btn").addEventListener("click", async () => {
+  if (!userAddress) return;
+  try {
+    const bal = await fetchAssetBalance(userAddress, selectedAsset.id);
+    ($("add-funds-input") as HTMLInputElement).value = String(Math.floor(bal * 1e7) / 1e7);
+    updatePreview();
+  } catch { /* ignore */ }
+});
+
+async function refreshAddFundsBalance() {
+  if (!userAddress) return;
+  try {
+    const bal = await fetchAssetBalance(userAddress, selectedAsset.id);
+    $("add-funds-balance").textContent = `${fmt(bal, 4)} ${selectedAsset.symbol}`;
+  } catch { /* ignore */ }
+}
 
 ($("leverage-slider") as HTMLInputElement).addEventListener("input",  updatePreview);
 // Live preview while typing (no clamping so user can type multi-digit numbers like "10")
@@ -1638,8 +1980,333 @@ renderTxHistory();
 renderPoolFooter();
 initTooltips();
 
+// ── Overview (cross-protocol dashboard) ───────────────────────────────────────
+
+interface OverviewBlendPosition {
+  pool: PoolDef;
+  asset: AssetInfo;
+  pos: AssetPosition;
+  reserves: ReserveStats[];
+}
+
+interface OverviewVaultPosition {
+  vault: VaultConfig;
+  userPos: UserVaultPosition;
+  stats: VaultStats | null;
+}
+
+let _overviewLoading = false;
+
+async function loadOverview() {
+  if (!userAddress || _overviewLoading) return;
+  _overviewLoading = true;
+
+  const blendPositions: OverviewBlendPosition[] = [];
+  const vaultPositions: OverviewVaultPosition[] = [];
+
+  // Fetch all Blend pool positions in parallel
+  const poolFetches = getKnownPools().map(async (pool) => {
+    try {
+      const poolAssets = getPoolAssets(pool);
+      const res = await fetchAllReserves(pool, userAddress!);
+      const pos = await fetchUserPositions(pool, userAddress!, res);
+      for (const [assetId, assetPos] of pos.byAsset) {
+        const asset = poolAssets.find(a => a.id === assetId);
+        if (asset) {
+          blendPositions.push({ pool, asset, pos: assetPos, reserves: res });
+        }
+      }
+    } catch (e) {
+      console.warn(`Overview: failed to load pool ${pool.name}`, e);
+    }
+  });
+
+  // Fetch vault positions in parallel
+  const vaultFetches = VAULTS.map(async (vault) => {
+    if (!vault.vaultId) return;
+    try {
+      const [stats, userPos] = await Promise.all([
+        fetchVaultStats(vault),
+        fetchUserVaultBalance(vault, userAddress!),
+      ]);
+      if (userPos && userPos.underlyingValue > 0) {
+        vaultPositions.push({ vault, userPos, stats });
+      }
+    } catch (e) {
+      console.warn(`Overview: failed to load vault ${vault.name}`, e);
+    }
+  });
+
+  await Promise.all([...poolFetches, ...vaultFetches]);
+  renderOverview(blendPositions, vaultPositions);
+  _overviewLoading = false;
+}
+
+function renderOverview(blendPos: OverviewBlendPosition[], vaultPos: OverviewVaultPosition[]) {
+  const container = $("ov-protocols");
+  const emptyEl = $("ov-empty");
+  const totalPositions = blendPos.length + vaultPos.length;
+
+  // Aggregate totals (USD-denominated where possible)
+  let totalEquity = 0;
+  let totalDebt = 0;
+
+  for (const bp of blendPos) {
+    const rs = bp.reserves.find(r => r.asset.id === bp.asset.id);
+    const price = rs?.priceUsd ?? 0;
+    totalEquity += bp.pos.equity * price;
+    totalDebt += bp.pos.debt * price;
+  }
+  for (const vp of vaultPos) {
+    totalEquity += vp.userPos.underlyingValue; // USDC-denominated
+  }
+
+  $("ov-total-equity").textContent = totalEquity > 0 ? `$${fmt(totalEquity, 2)}` : "--";
+  $("ov-total-debt").textContent = totalDebt > 0 ? `$${fmt(totalDebt, 2)}` : "--";
+  $("ov-total-count").textContent = String(totalPositions);
+
+  if (totalPositions === 0) {
+    emptyEl.classList.remove("hidden");
+    container.innerHTML = "";
+    return;
+  }
+  emptyEl.classList.add("hidden");
+
+  let html = "";
+
+  // Group Blend positions by pool
+  const poolGroups = new Map<string, OverviewBlendPosition[]>();
+  for (const bp of blendPos) {
+    const arr = poolGroups.get(bp.pool.id) ?? [];
+    arr.push(bp);
+    poolGroups.set(bp.pool.id, arr);
+  }
+
+  if (poolGroups.size > 0) {
+    html += `<div class="overview-protocol-section">
+      <div class="overview-protocol-header">
+        <span class="overview-protocol-dot overview-protocol-dot-blend"></span>
+        Blend Protocol
+      </div>
+      <div class="overview-positions">`;
+
+    for (const [poolId, positions] of poolGroups) {
+      const pool = getKnownPools().find(p => p.id === poolId)!;
+      for (const bp of positions) {
+        const rs = bp.reserves.find(r => r.asset.id === bp.asset.id);
+        const price = rs?.priceUsd ?? 0;
+        const netApr = rs ? rs.netSupplyApr * bp.pos.leverage - rs.netBorrowCost * (bp.pos.leverage - 1) : 0;
+        const hfColor = bp.pos.hf > 1.1 ? "hf-ok" : bp.pos.hf > 1.03 ? "hf-warn" : "hf-bad";
+        const equityUsd = bp.pos.equity * price;
+
+        html += `<div class="overview-pos-card" data-nav-pool="${poolId}" data-nav-asset="${bp.asset.id}">
+          <div class="overview-pos-card-top">
+            <span class="overview-pos-card-symbol">${bp.asset.symbol}</span>
+            <span class="overview-pos-card-pool">${pool.name}</span>
+          </div>
+          <div class="overview-pos-card-grid">
+            <div class="overview-pos-card-metric">
+              <span class="overview-pos-card-label">Equity</span>
+              <span class="overview-pos-card-value">${fmt(bp.pos.equity, 2)} ${bp.asset.symbol}</span>
+            </div>
+            <div class="overview-pos-card-metric">
+              <span class="overview-pos-card-label">Value</span>
+              <span class="overview-pos-card-value">${price > 0 ? "$" + fmt(equityUsd, 2) : "--"}</span>
+            </div>
+            <div class="overview-pos-card-metric">
+              <span class="overview-pos-card-label">Leverage</span>
+              <span class="overview-pos-card-value">${fmt(bp.pos.leverage, 1)}&times;</span>
+            </div>
+            <div class="overview-pos-card-metric">
+              <span class="overview-pos-card-label">Health Factor</span>
+              <span class="overview-pos-card-value ${hfColor}">${isFinite(bp.pos.hf) ? fmt(bp.pos.hf, 3) : "\u221E"}</span>
+            </div>
+            <div class="overview-pos-card-metric">
+              <span class="overview-pos-card-label">Net APY</span>
+              <span class="overview-pos-card-value ${netApr > 0 ? "hf-ok" : "hf-bad"}">${netApr >= 0 ? "+" : ""}${fmt(netApr, 1)}%</span>
+            </div>
+            <div class="overview-pos-card-metric">
+              <span class="overview-pos-card-label">Debt</span>
+              <span class="overview-pos-card-value">${fmt(bp.pos.debt, 2)} ${bp.asset.symbol}</span>
+            </div>
+          </div>
+        </div>`;
+      }
+    }
+    html += `</div></div>`;
+  }
+
+  // Vault positions
+  if (vaultPos.length > 0) {
+    html += `<div class="overview-protocol-section">
+      <div class="overview-protocol-header">
+        <span class="overview-protocol-dot overview-protocol-dot-vault"></span>
+        DeFindex Vaults
+      </div>
+      <div class="overview-positions">`;
+
+    for (const vp of vaultPos) {
+      const hf = vp.stats ? formatHf(vp.stats.healthFactor) : { text: "--", cls: "" };
+      html += `<div class="overview-vault-card" data-nav-vault="${vp.vault.vaultId}">
+        <div class="overview-pos-card-top">
+          <span class="overview-pos-card-symbol">${vp.vault.name}</span>
+          <span class="overview-pos-card-pool">DeFindex</span>
+        </div>
+        <div class="overview-pos-card-grid">
+          <div class="overview-pos-card-metric">
+            <span class="overview-pos-card-label">Value</span>
+            <span class="overview-pos-card-value">${formatUsd(vp.userPos.underlyingValue)}</span>
+          </div>
+          <div class="overview-pos-card-metric">
+            <span class="overview-pos-card-label">Strategy HF</span>
+            <span class="overview-pos-card-value ${hf.cls}">${hf.text}</span>
+          </div>
+        </div>
+      </div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  container.innerHTML = html;
+
+  // Wire up click navigation for Blend position cards
+  container.querySelectorAll<HTMLElement>(".overview-pos-card").forEach(card => {
+    card.addEventListener("click", () => {
+      const poolId = card.dataset.navPool!;
+      const assetId = card.dataset.navAsset!;
+      const pool = getKnownPools().find(p => p.id === poolId);
+      if (pool) {
+        selectPool(pool);
+        const asset = getPoolAssets(pool).find(a => a.id === assetId);
+        if (asset) selectAsset(asset);
+        switchView("leverage");
+      }
+    });
+  });
+
+  // Wire up click navigation for vault cards
+  container.querySelectorAll<HTMLElement>(".overview-vault-card").forEach(card => {
+    card.addEventListener("click", () => switchView("vault"));
+  });
+}
+
+$("overview-refresh-btn").addEventListener("click", () => loadOverview());
+
+// ── Vault view ───────────────────────────────────────────────────────────────
+
+const activeVault = VAULTS[0];
+
+async function refreshVaultView() {
+  const vaultDepBtn = $("vault-deposit-btn") as HTMLButtonElement;
+  const vaultWdBtn  = $("vault-withdraw-btn") as HTMLButtonElement;
+
+  // Enable/disable based on wallet connection and vault availability
+  const connected = !!userAddress;
+  const vaultReady = !!activeVault.vaultId;
+
+  vaultDepBtn.disabled = !connected || !vaultReady;
+  vaultWdBtn.disabled  = !connected || !vaultReady;
+
+  if (!vaultReady) {
+    $("vault-tvl").textContent = "Not deployed";
+    $("vault-share-price").textContent = "--";
+    $("vault-hf").textContent = "--";
+    return;
+  }
+
+  // Fetch vault stats
+  const stats = await fetchVaultStats(activeVault);
+  if (stats) {
+    $("vault-tvl").textContent = formatUsd(stats.totalEquity);
+    $("vault-share-price").textContent = formatUsd(stats.sharePrice, 6);
+    const hf = formatHf(stats.healthFactor);
+    const hfEl = $("vault-hf");
+    hfEl.textContent = hf.text;
+    hfEl.className = "stat-value " + hf.cls;
+  }
+
+  // Fetch user position if connected
+  if (connected && userAddress) {
+    // Wallet balance
+    const bal = await fetchAssetBalance(activeVault.assetId, userAddress);
+    $("vault-wallet-balance").textContent =
+      (bal / 10 ** activeVault.decimals).toFixed(2) + " " + activeVault.assetSymbol;
+
+    const pos = await fetchUserVaultBalance(activeVault, userAddress);
+    if (pos && pos.underlyingValue > 0) {
+      $("vault-user-pos").classList.remove("hidden");
+      $("vault-user-shares").textContent = pos.shares.toFixed(4);
+      $("vault-user-value").textContent = formatUsd(pos.underlyingValue);
+    } else {
+      $("vault-user-pos").classList.add("hidden");
+    }
+  }
+}
+
+// Vault deposit
+$("vault-deposit-btn").addEventListener("click", async () => {
+  if (!userAddress || !activeVault.vaultId) return;
+  const amount = parseFloat(($("vault-deposit-input") as HTMLInputElement).value);
+  if (!amount || amount <= 0) return;
+
+  try {
+    ($("vault-deposit-btn") as HTMLButtonElement).disabled = true;
+    ($("vault-deposit-btn") as HTMLButtonElement).textContent = "Depositing...";
+
+    const xdr = await buildVaultDepositXdr(activeVault, userAddress, amount);
+    const { signedTxXdr } = await StellarWalletsKit.signTransaction(xdr);
+    await submitSignedXdr(signedTxXdr);
+    await refreshVaultView();
+    ($("vault-deposit-input") as HTMLInputElement).value = "";
+  } catch (err: any) {
+    alert("Deposit failed: " + (err.message || err));
+  } finally {
+    ($("vault-deposit-btn") as HTMLButtonElement).disabled = false;
+    ($("vault-deposit-btn") as HTMLButtonElement).textContent = "Deposit";
+  }
+});
+
+// Vault withdraw
+$("vault-withdraw-btn").addEventListener("click", async () => {
+  if (!userAddress || !activeVault.vaultId) return;
+  const amount = parseFloat(($("vault-withdraw-input") as HTMLInputElement).value);
+  if (!amount || amount <= 0) return;
+
+  try {
+    ($("vault-withdraw-btn") as HTMLButtonElement).disabled = true;
+    ($("vault-withdraw-btn") as HTMLButtonElement).textContent = "Withdrawing...";
+
+    const xdr = await buildVaultWithdrawXdr(activeVault, userAddress, amount);
+    const { signedTxXdr } = await StellarWalletsKit.signTransaction(xdr);
+    await submitSignedXdr(signedTxXdr);
+    await refreshVaultView();
+    ($("vault-withdraw-input") as HTMLInputElement).value = "";
+  } catch (err: any) {
+    alert("Withdraw failed: " + (err.message || err));
+  } finally {
+    ($("vault-withdraw-btn") as HTMLButtonElement).disabled = false;
+    ($("vault-withdraw-btn") as HTMLButtonElement).textContent = "Withdraw";
+  }
+});
+
 // ── Auto-reconnect saved wallet ──────────────────────────────────────────────
 (async () => {
+  // Restore network preference
+  const savedNet = localStorage.getItem("networkMode") as NetworkMode | null;
+  if (savedNet === "testnet") {
+    setNetwork("testnet");
+    StellarWalletsKit.init({
+      modules: [new FreighterModule(), new xBullModule(), new AlbedoModule(), new LobstrModule(), new HanaModule()],
+      network: Networks.TESTNET,
+    });
+    selectedPool = getKnownPools()[0];
+    assets = getPoolAssets(selectedPool);
+    selectedAsset = assets[0];
+    $("network-toggle").textContent = "Testnet";
+    $("network-toggle").classList.add("testnet-active");
+    $("testnet-banner").classList.remove("hidden");
+  }
+
   const saved = localStorage.getItem("walletAddress");
   if (!saved) return;
   userAddress = saved;

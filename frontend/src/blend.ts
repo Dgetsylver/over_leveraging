@@ -18,16 +18,9 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Types & constants ────────────────────────────────────────────────────────
 
-export const BLND_ID   = "CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY";
-export const NETWORK   = Networks.PUBLIC;
-// soroban-rpc.creit.tech is the RPC used by the official Blend UI — CORS-enabled for browsers
-export const RPC_URL   = "https://soroban-rpc.creit.tech/";
-
-// Null account: valid on mainnet, sequence=0 — used for read-only simulations
-// so we never need to call getAccount() just to read pool data
-const NULL_ACCOUNT = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+export type NetworkMode = "mainnet" | "testnet";
 
 // Token rate scale (b_rate / d_rate): 12 decimal places
 const RATE_DEC   = 1_000_000_000_000n;
@@ -40,7 +33,8 @@ export const WITHDRAW_COLLATERAL = 3;
 export const REPAY  = 5;
 export const BORROW = 4;
 
-// ── Pool definitions ──────────────────────────────────────────────────────────
+// Null account: valid on any network, sequence=0 — used for read-only simulations
+const NULL_ACCOUNT = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 export interface PoolDef {
   id:         string;   // pool contract address
@@ -52,57 +46,6 @@ export interface PoolDef {
   assetIds:   string[]; // asset contract IDs in reserve order
 }
 
-export const KNOWN_POOLS: PoolDef[] = [
-  {
-    id:        "CDMAVJPFXPADND3YRL4BSM3AKZWCTFMX27GLLXCML3PD62HEQS5FPVAI",
-    name:      "Etherfuse",
-    oracleId:  "CAVRP26CWW6IUEXBRA3Q2T2SHBUVBC2DF43M4E23LEZGW5ZEIB62HALS",
-    oracleDec: 1e14,
-    backstopFP: 2_000_000,
-    status:    1,
-    assetIds: [
-      "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA", // XLM
-      "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75", // USDC
-      "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV", // CETES
-      "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR", // USTRY
-      "CD6M4R2322BYCY2LNWM74PEBQAQ63SA3DUJLI3L4225U4ZVCLMSCBCIS", // TESOURO
-    ],
-  },
-  {
-    id:        "CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD",
-    name:      "Fixed",
-    oracleId:  "CCVTVW2CVA7JLH4ROQGP3CU4T3EXVCK66AZGSM4MUQPXAI4QHCZPOATS",
-    oracleDec: 1e7,
-    backstopFP: 2_000_000,
-    status:    1,
-    assetIds: [
-      "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA", // XLM
-      "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75", // USDC
-      "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV", // EURC
-    ],
-  },
-  {
-    id:        "CCCCIQSDILITHMM7PBSLVDT5MISSY7R26MNZXCX4H7J5JQ5FPIYOGYFS",
-    name:      "YieldBlox",
-    oracleId:  "CD74A3C54EKUVEGUC6WNTUPOTHB624WFKXN3IYTFJGX3EHXDXHCYMXXR",
-    oracleDec: 1e7,
-    backstopFP: 2_000_000,
-    status:    4, // Admin Frozen
-    assetIds: [
-      "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA", // XLM
-      "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75", // USDC
-      "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV", // EURC
-      "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK", // AQUA
-      "CB226ZOEYXTBPD3QEGABTJYSKZVBP2PASEISLG3SBMTN5CE4QZUVZ3CE", // USDGLO
-      "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR", // USTRY
-      "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV", // CETES
-      "CCCRWH6Q3FNP3I2I57BDLM5AFAT7O6OF6GKQOC6SSJNDAVRZ57SPHGU2", // PYUSD
-    ],
-  },
-];
-
-// ── Asset metadata registry ───────────────────────────────────────────────────
-
 interface AssetMeta {
   symbol:   string;
   name:     string;
@@ -111,35 +54,175 @@ interface AssetMeta {
   maxUtil:  number; // default max utilisation
 }
 
-const ASSET_METADATA: Record<string, AssetMeta> = {
-  "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA": {
-    symbol: "XLM", name: "Stellar Lumens",   decimals: 7, cFactor: 0.75, maxUtil: 0.70,
+interface NetworkConfig {
+  passphrase:    string;
+  rpcUrl:        string;
+  horizonUrl:    string;
+  blndId:        string;
+  blndClassic:   Asset;
+  pools:         PoolDef[];
+  assetMetadata: Record<string, AssetMeta>;
+  classicAssets: Record<string, Asset>;
+}
+
+// ── Mainnet configuration ────────────────────────────────────────────────────
+
+const MAINNET_CONFIG: NetworkConfig = {
+  passphrase:  Networks.PUBLIC,
+  rpcUrl:      "https://soroban-rpc.creit.tech/",
+  horizonUrl:  "https://horizon.stellar.org",
+  blndId:      "CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY",
+  blndClassic: new Asset("BLND", "GDJEHTBE6ZHUXSWFI642DCGLUOECLHPF3KSXHPXTSTJ7E3JF6MQ5EZYY"),
+  pools: [
+    {
+      id:        "CDMAVJPFXPADND3YRL4BSM3AKZWCTFMX27GLLXCML3PD62HEQS5FPVAI",
+      name:      "Etherfuse",
+      oracleId:  "CAVRP26CWW6IUEXBRA3Q2T2SHBUVBC2DF43M4E23LEZGW5ZEIB62HALS",
+      oracleDec: 1e14,
+      backstopFP: 2_000_000,
+      status:    1,
+      assetIds: [
+        "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA", // XLM
+        "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75", // USDC
+        "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV", // CETES
+        "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR", // USTRY
+        "CD6M4R2322BYCY2LNWM74PEBQAQ63SA3DUJLI3L4225U4ZVCLMSCBCIS", // TESOURO
+      ],
+    },
+    {
+      id:        "CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD",
+      name:      "Fixed",
+      oracleId:  "CCVTVW2CVA7JLH4ROQGP3CU4T3EXVCK66AZGSM4MUQPXAI4QHCZPOATS",
+      oracleDec: 1e7,
+      backstopFP: 2_000_000,
+      status:    1,
+      assetIds: [
+        "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA", // XLM
+        "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75", // USDC
+        "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV", // EURC
+      ],
+    },
+    {
+      id:        "CCCCIQSDILITHMM7PBSLVDT5MISSY7R26MNZXCX4H7J5JQ5FPIYOGYFS",
+      name:      "YieldBlox",
+      oracleId:  "CD74A3C54EKUVEGUC6WNTUPOTHB624WFKXN3IYTFJGX3EHXDXHCYMXXR",
+      oracleDec: 1e7,
+      backstopFP: 2_000_000,
+      status:    4, // Admin Frozen
+      assetIds: [
+        "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA", // XLM
+        "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75", // USDC
+        "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV", // EURC
+        "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK", // AQUA
+        "CB226ZOEYXTBPD3QEGABTJYSKZVBP2PASEISLG3SBMTN5CE4QZUVZ3CE", // USDGLO
+        "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR", // USTRY
+        "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV", // CETES
+        "CCCRWH6Q3FNP3I2I57BDLM5AFAT7O6OF6GKQOC6SSJNDAVRZ57SPHGU2", // PYUSD
+      ],
+    },
+  ],
+  assetMetadata: {
+    "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA": {
+      symbol: "XLM", name: "Stellar Lumens",   decimals: 7, cFactor: 0.75, maxUtil: 0.70,
+    },
+    "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75": {
+      symbol: "USDC", name: "USD Coin",          decimals: 7, cFactor: 0.95, maxUtil: 0.95,
+    },
+    "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV": {
+      symbol: "CETES", name: "CETES",             decimals: 7, cFactor: 0.80, maxUtil: 0.90,
+    },
+    "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR": {
+      symbol: "USTRY", name: "US Treasury",       decimals: 7, cFactor: 0.90, maxUtil: 0.90,
+    },
+    "CD6M4R2322BYCY2LNWM74PEBQAQ63SA3DUJLI3L4225U4ZVCLMSCBCIS": {
+      symbol: "TESOURO", name: "Brazilian Treasury", decimals: 7, cFactor: 0.80, maxUtil: 0.90,
+    },
+    "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV": {
+      symbol: "EURC", name: "Euro Coin",           decimals: 7, cFactor: 0.90, maxUtil: 0.90,
+    },
+    "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK": {
+      symbol: "AQUA", name: "Aquarius",            decimals: 7, cFactor: 0.00, maxUtil: 0.80,
+    },
+    "CB226ZOEYXTBPD3QEGABTJYSKZVBP2PASEISLG3SBMTN5CE4QZUVZ3CE": {
+      symbol: "USDGLO", name: "Global Dollar",     decimals: 7, cFactor: 0.90, maxUtil: 0.90,
+    },
+    "CCCRWH6Q3FNP3I2I57BDLM5AFAT7O6OF6GKQOC6SSJNDAVRZ57SPHGU2": {
+      symbol: "PYUSD", name: "PayPal USD",          decimals: 7, cFactor: 0.90, maxUtil: 0.90,
+    },
   },
-  "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75": {
-    symbol: "USDC", name: "USD Coin",          decimals: 7, cFactor: 0.95, maxUtil: 0.95,
-  },
-  "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV": {
-    symbol: "CETES", name: "CETES",             decimals: 7, cFactor: 0.80, maxUtil: 0.90,
-  },
-  "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR": {
-    symbol: "USTRY", name: "US Treasury",       decimals: 7, cFactor: 0.90, maxUtil: 0.90,
-  },
-  "CD6M4R2322BYCY2LNWM74PEBQAQ63SA3DUJLI3L4225U4ZVCLMSCBCIS": {
-    symbol: "TESOURO", name: "Brazilian Treasury", decimals: 7, cFactor: 0.80, maxUtil: 0.90,
-  },
-  "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV": {
-    symbol: "EURC", name: "Euro Coin",           decimals: 7, cFactor: 0.90, maxUtil: 0.90,
-  },
-  "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK": {
-    symbol: "AQUA", name: "Aquarius",            decimals: 7, cFactor: 0.00, maxUtil: 0.80,
-  },
-  "CB226ZOEYXTBPD3QEGABTJYSKZVBP2PASEISLG3SBMTN5CE4QZUVZ3CE": {
-    symbol: "USDGLO", name: "Global Dollar",     decimals: 7, cFactor: 0.90, maxUtil: 0.90,
-  },
-  "CCCRWH6Q3FNP3I2I57BDLM5AFAT7O6OF6GKQOC6SSJNDAVRZ57SPHGU2": {
-    symbol: "PYUSD", name: "PayPal USD",          decimals: 7, cFactor: 0.90, maxUtil: 0.90,
+  classicAssets: {
+    "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA": Asset.native(),
+    "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75": new Asset("USDC", "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"),
+    "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV": new Asset("EURC", "GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2"),
+    "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK": new Asset("AQUA", "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"),
+    "CB226ZOEYXTBPD3QEGABTJYSKZVBP2PASEISLG3SBMTN5CE4QZUVZ3CE": new Asset("USDGLO", "GBBS25EGYQPGEZCGCFBKG4OAGFXU6DSOQBGTHELLJT3HZXZJ34HWS6XV"),
+    "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR": new Asset("USTRY", "GCRYUGD5NVARGXT56XEZI5CIFCQETYHAPQQTHO2O3IQZTHDH4LATMYWC"),
+    "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV": new Asset("CETES", "GCRYUGD5NVARGXT56XEZI5CIFCQETYHAPQQTHO2O3IQZTHDH4LATMYWC"),
+    "CCCRWH6Q3FNP3I2I57BDLM5AFAT7O6OF6GKQOC6SSJNDAVRZ57SPHGU2": new Asset("PYUSD", "GDQE7IXJ4HUHV6RQHIUPRJSEZE4DRS5WY577O2FY6YQ5LVWZ7JZTU2V5"),
+    "CD6M4R2322BYCY2LNWM74PEBQAQ63SA3DUJLI3L4225U4ZVCLMSCBCIS": new Asset("TESOURO", "GCRYUGD5NVARGXT56XEZI5CIFCQETYHAPQQTHO2O3IQZTHDH4LATMYWC"),
   },
 };
+
+// ── Testnet configuration ────────────────────────────────────────────────────
+
+const TESTNET_USDC_ISSUER = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
+
+const TESTNET_CONFIG: NetworkConfig = {
+  passphrase:  Networks.TESTNET,
+  rpcUrl:      "https://soroban-testnet.stellar.org",
+  horizonUrl:  "https://horizon-testnet.stellar.org",
+  blndId:      "", // BLND not needed on testnet
+  blndClassic: new Asset("BLND", "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"), // placeholder
+  pools: [
+    {
+      id:        "CAPBMXIQTICKWFPWFDJWMAKBXBPJZUKLNONQH3MLPLLBKQ643CYN5PRW",
+      name:      "Testnet Pool",
+      oracleId:  "", // Oracle may not be available; reserves will use defaults
+      oracleDec: 1e7,
+      backstopFP: 2_000_000,
+      status:    1,
+      assetIds: [
+        "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC", // XLM (SAC)
+        "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA", // USDC
+      ],
+    },
+  ],
+  assetMetadata: {
+    "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC": {
+      symbol: "XLM", name: "Stellar Lumens",  decimals: 7, cFactor: 0.75, maxUtil: 0.70,
+    },
+    "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA": {
+      symbol: "USDC", name: "USD Coin",         decimals: 7, cFactor: 0.95, maxUtil: 0.95,
+    },
+  },
+  classicAssets: {
+    "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC": Asset.native(),
+    "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA": new Asset("USDC", TESTNET_USDC_ISSUER),
+  },
+};
+
+// ── Active network state ─────────────────────────────────────────────────────
+
+let _activeNet: NetworkMode = "mainnet";
+let _cfg: NetworkConfig = MAINNET_CONFIG;
+
+export function getActiveNetwork(): NetworkMode { return _activeNet; }
+export function getNetworkPassphrase(): string { return _cfg.passphrase; }
+export function getHorizonUrl(): string { return _cfg.horizonUrl; }
+
+export function setNetwork(net: NetworkMode) {
+  _activeNet = net;
+  _cfg = net === "testnet" ? TESTNET_CONFIG : MAINNET_CONFIG;
+  // Rebuild RPC/Horizon clients
+  server  = new SorobanRpc.Server(_cfg.rpcUrl);
+  horizon = new Horizon.Server(_cfg.horizonUrl);
+  // Reset BLND price cache
+  _blndPriceCache = null;
+}
+
+/** Exported getters for active config — used by main.ts and other modules */
+export function getKnownPools(): PoolDef[] { return _cfg.pools; }
+export function getBlndId(): string { return _cfg.blndId; }
 
 // ── Asset registry ────────────────────────────────────────────────────────────
 
@@ -155,11 +238,11 @@ export interface AssetInfo {
   maxUtil:      number;   // 0..1
 }
 
-/** Build the AssetInfo array for a given pool from ASSET_METADATA. */
+/** Build the AssetInfo array for a given pool from active network's asset metadata. */
 export function getPoolAssets(pool: PoolDef): AssetInfo[] {
   return pool.assetIds.map((id, idx) => {
-    const meta = ASSET_METADATA[id];
-    if (!meta) throw new Error(`Unknown asset id: ${id}`);
+    const meta = _cfg.assetMetadata[id];
+    if (!meta) throw new Error(`Unknown asset id: ${id} (network: ${_activeNet})`);
     return {
       id,
       symbol:        meta.symbol,
@@ -176,24 +259,8 @@ export function getPoolAssets(pool: PoolDef): AssetInfo[] {
 
 // ── RPC ───────────────────────────────────────────────────────────────────────
 
-export const server  = new SorobanRpc.Server(RPC_URL);
-const horizon = new Horizon.Server("https://horizon.stellar.org");
-
-// ── Classic asset mapping (Soroban contract ID → classic CODE:ISSUER) ─────────
-
-const CLASSIC_ASSETS: Record<string, Asset> = {
-  "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA": Asset.native(),
-  "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75": new Asset("USDC", "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"),
-  "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV": new Asset("EURC", "GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2"),
-  "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK": new Asset("AQUA", "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"),
-  "CB226ZOEYXTBPD3QEGABTJYSKZVBP2PASEISLG3SBMTN5CE4QZUVZ3CE": new Asset("USDGLO", "GBBS25EGYQPGEZCGCFBKG4OAGFXU6DSOQBGTHELLJT3HZXZJ34HWS6XV"),
-  "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR": new Asset("USTRY", "GCRYUGD5NVARGXT56XEZI5CIFCQETYHAPQQTHO2O3IQZTHDH4LATMYWC"),
-  "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV": new Asset("CETES", "GCRYUGD5NVARGXT56XEZI5CIFCQETYHAPQQTHO2O3IQZTHDH4LATMYWC"),
-  "CCCRWH6Q3FNP3I2I57BDLM5AFAT7O6OF6GKQOC6SSJNDAVRZ57SPHGU2": new Asset("PYUSD", "GDQE7IXJ4HUHV6RQHIUPRJSEZE4DRS5WY577O2FY6YQ5LVWZ7JZTU2V5"),
-  "CD6M4R2322BYCY2LNWM74PEBQAQ63SA3DUJLI3L4225U4ZVCLMSCBCIS": new Asset("TESOURO", "GCRYUGD5NVARGXT56XEZI5CIFCQETYHAPQQTHO2O3IQZTHDH4LATMYWC"),
-};
-
-const BLND_CLASSIC = new Asset("BLND", "GDJEHTBE6ZHUXSWFI642DCGLUOECLHPF3KSXHPXTSTJ7E3JF6MQ5EZYY");
+export let server  = new SorobanRpc.Server(MAINNET_CONFIG.rpcUrl);
+let horizon = new Horizon.Server(MAINNET_CONFIG.horizonUrl);
 
 // ── ScVal helpers ─────────────────────────────────────────────────────────────
 
@@ -235,7 +302,7 @@ function buildRequestsVec(items: xdr.ScVal[]): xdr.ScVal {
 async function simulate(op: xdr.Operation): Promise<any> {
   try {
     const acc = new Account(NULL_ACCOUNT, "0");
-    const tx  = new TransactionBuilder(acc, { fee: BASE_FEE, networkPassphrase: NETWORK })
+    const tx  = new TransactionBuilder(acc, { fee: BASE_FEE, networkPassphrase: _cfg.passphrase })
       .addOperation(op).setTimeout(30).build();
     const sim = await server.simulateTransaction(tx);
     if (!SorobanRpc.Api.isSimulationSuccess(sim)) return null;
@@ -674,7 +741,7 @@ export async function buildApproveXdr(
   const acc = await server.getAccount(userAddress);
   const tx  = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
-    networkPassphrase: NETWORK,
+    networkPassphrase: _cfg.passphrase,
   })
     .addOperation(token.call(
       "approve",
@@ -706,7 +773,7 @@ export async function buildOpenPositionXdr(
   const acc = await server.getAccount(userAddress);
   const tx  = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
-    networkPassphrase: NETWORK,
+    networkPassphrase: _cfg.passphrase,
   })
     .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
     .setTimeout(60).build();
@@ -753,7 +820,7 @@ export async function buildCloseSubmitXdr(
   const acc          = await server.getAccount(userAddress);
   const tx           = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
-    networkPassphrase: NETWORK,
+    networkPassphrase: _cfg.passphrase,
   })
     .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
     .setTimeout(60).build();
@@ -790,7 +857,7 @@ export async function buildRepayXdr(
   const acc          = await server.getAccount(userAddress);
   const tx           = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
-    networkPassphrase: NETWORK,
+    networkPassphrase: _cfg.passphrase,
   })
     .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
     .setTimeout(60).build();
@@ -846,7 +913,7 @@ export async function buildClaimXdr(
   const acc = await server.getAccount(userAddress);
   const tx  = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
-    networkPassphrase: NETWORK,
+    networkPassphrase: _cfg.passphrase,
   })
     .addOperation(poolContract.call("claim", addrScVal, tokenIds_scv, addrScVal))
     .setTimeout(60).build();
@@ -910,7 +977,7 @@ export async function buildIncreaseLeverageXdr(
   const acc          = await server.getAccount(userAddress);
   const tx = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
-    networkPassphrase: NETWORK,
+    networkPassphrase: _cfg.passphrase,
   })
     .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
     .setTimeout(60).build();
@@ -952,7 +1019,7 @@ export async function buildDecreaseLeverageXdr(
   const acc          = await server.getAccount(userAddress);
   const tx = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
-    networkPassphrase: NETWORK,
+    networkPassphrase: _cfg.passphrase,
   })
     .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
     .setTimeout(60).build();
@@ -985,7 +1052,7 @@ export async function buildResupplyXdr(
   const acc          = await server.getAccount(userAddress);
   const tx           = new TransactionBuilder(acc, {
     fee: (BigInt(BASE_FEE) * 10n).toString(),
-    networkPassphrase: NETWORK,
+    networkPassphrase: _cfg.passphrase,
   })
     .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
     .setTimeout(60).build();
@@ -1012,14 +1079,14 @@ export async function buildSwapBlndXdr(
   destAssetId: string,
   slippage: number = 0.02,
 ): Promise<{ xdr: string; estimate: string }> {
-  const destAsset = CLASSIC_ASSETS[destAssetId];
+  const destAsset = _cfg.classicAssets[destAssetId];
   if (!destAsset) throw new Error(`No classic asset mapping for ${destAssetId}`);
 
   const sendAmount = blndAmount.toFixed(7);
 
   // Find best path via Horizon
   const paths = await horizon
-    .strictSendPaths(BLND_CLASSIC, sendAmount, [destAsset])
+    .strictSendPaths(_cfg.blndClassic, sendAmount, [destAsset])
     .call();
 
   if (paths.records.length === 0)
@@ -1038,10 +1105,10 @@ export async function buildSwapBlndXdr(
   const acc = await horizon.loadAccount(userAddress);
   const tx  = new TransactionBuilder(acc, {
     fee: "10000",
-    networkPassphrase: NETWORK,
+    networkPassphrase: _cfg.passphrase,
   })
     .addOperation(Operation.pathPaymentStrictSend({
-      sendAsset:   BLND_CLASSIC,
+      sendAsset:   _cfg.blndClassic,
       sendAmount:  sendAmount,
       destination: userAddress,
       destAsset:   destAsset,
@@ -1061,12 +1128,12 @@ export async function estimateBlndSwap(
   blndAmount: number,
   destAssetId: string,
 ): Promise<{ estimate: number; path: string } | null> {
-  const destAsset = CLASSIC_ASSETS[destAssetId];
+  const destAsset = _cfg.classicAssets[destAssetId];
   if (!destAsset) return null;
 
   try {
     const paths = await horizon
-      .strictSendPaths(BLND_CLASSIC, blndAmount.toFixed(7), [destAsset])
+      .strictSendPaths(_cfg.blndClassic, blndAmount.toFixed(7), [destAsset])
       .call();
     if (paths.records.length === 0) return null;
     const best = paths.records[0];
@@ -1083,7 +1150,7 @@ export async function estimateBlndSwap(
 // ── Submit signed XDR ─────────────────────────────────────────────────────────
 
 export async function submitSignedXdr(signedXdr: string): Promise<string> {
-  const tx     = TransactionBuilder.fromXDR(signedXdr, NETWORK);
+  const tx     = TransactionBuilder.fromXDR(signedXdr, _cfg.passphrase);
   const result = await server.sendTransaction(tx);
   if (result.status === "ERROR")
     throw new Error(`Send failed: ${result.errorResult?.toXDR("base64")}`);
@@ -1100,7 +1167,7 @@ export async function submitSignedXdr(signedXdr: string): Promise<string> {
 
 /** Submit a classic (non-Soroban) transaction via Horizon. */
 export async function submitClassicXdr(signedXdr: string): Promise<string> {
-  const tx = TransactionBuilder.fromXDR(signedXdr, NETWORK);
+  const tx = TransactionBuilder.fromXDR(signedXdr, _cfg.passphrase);
   const result = await horizon.submitTransaction(tx);
   return (result as any).hash;
 }
