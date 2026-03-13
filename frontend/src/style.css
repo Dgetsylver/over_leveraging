@@ -482,12 +482,14 @@ main { flex: 1; max-width: 1060px; width: 100%; margin: 0 auto; padding: 24px 28
 .zone-moderate { color: var(--primary); }
 .zone-aggressive { color: var(--warning); }
 .zone-degen { color: var(--danger); }
+.zone-maxi-degen { color: #ff0040; text-shadow: 0 0 6px rgba(255,0,64,.4); }
 .slider-zone.active { opacity: 1; font-weight: 800; }
 .slider-zone:not(.active) { opacity: .4; }
 
 /* APY chart */
-.apy-chart { margin: 4px 0 12px; }
-.apy-chart svg { width: 100%; height: 80px; display: block; }
+.apy-chart { margin: 4px 0 12px; overflow: visible; }
+.apy-chart svg { width: 100%; height: 80px; display: block; overflow: visible; }
+.apy-chart-cur { font-weight: 700; }
 .apy-chart-line { fill: none; stroke: var(--primary); stroke-width: 1.5; }
 .apy-chart-zero { stroke: var(--border); stroke-width: 0.5; stroke-dasharray: 4 4; }
 .apy-chart-dot { fill: var(--primary); }
@@ -754,6 +756,14 @@ main { flex: 1; max-width: 1060px; width: 100%; margin: 0 auto; padding: 24px 28
 .swap-quote-details .preview-row { font-size: 13px; }
 
 /* Slippage selector */
+/* Broker settings */
+.broker-settings { margin: 8px 0; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.broker-settings-title {
+  cursor: pointer; padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--text-2);
+  list-style: none; display: flex; align-items: center; gap: 6px;
+}
+.broker-settings-title::before { content: "\u2699"; font-size: 14px; }
+.broker-settings-body { padding: 4px 12px 10px; }
 .slippage-row { align-items: flex-start !important; }
 .slippage-selector {
   display: flex; align-items: center; gap: 4px; flex-wrap: wrap;

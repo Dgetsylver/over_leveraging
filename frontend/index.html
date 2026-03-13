@@ -379,6 +379,7 @@
                   <span class="slider-zone zone-moderate" data-zone="moderate">Moderate</span>
                   <span class="slider-zone zone-aggressive" data-zone="aggressive">Aggressive</span>
                   <span class="slider-zone zone-degen" data-zone="degen">Degen</span>
+                  <span class="slider-zone zone-maxi-degen hidden" id="zone-maxi-degen" data-zone="maxi-degen">Maxi Degen</span>
                 </div>
                 <div id="apy-chart" class="apy-chart"></div>
                 <div class="leverage-preview">
@@ -393,6 +394,9 @@
                   </div>
                   <div class="preview-row">
                     <span>Total borrow</span><strong id="prev-borrow">—</strong>
+                  </div>
+                  <div class="preview-row">
+                    <span>Borrow headroom</span><strong id="prev-headroom" class="mono">—</strong>
                   </div>
                   <div class="preview-row preview-net-apr">
                     <span>Est. net APR</span><strong id="prev-net-apr" class="prev-net-apr">—</strong>
@@ -457,20 +461,27 @@
               <div class="preview-row">
                 <span>Broker advantage</span><strong id="swap-profit" class="mono">—</strong>
               </div>
-              <div class="preview-row slippage-row">
-                <span>Slippage tolerance</span>
-                <div class="slippage-selector">
-                  <button class="slippage-opt" data-slip="0.005">0.5%</button>
-                  <button class="slippage-opt" data-slip="0.01">1%</button>
-                  <button class="slippage-opt active" data-slip="0.02">2%</button>
-                  <button class="slippage-opt" data-slip="0.05">5%</button>
-                  <div class="slippage-custom">
-                    <input type="number" id="slippage-custom-input" class="input mono" placeholder="Custom" min="0.1" max="50" step="0.1" />
-                    <span class="slippage-pct">%</span>
+            </div>
+
+            <!-- Broker settings — always visible -->
+            <details class="broker-settings" open>
+              <summary class="broker-settings-title">Broker Settings</summary>
+              <div class="broker-settings-body">
+                <div class="preview-row slippage-row">
+                  <span>Slippage tolerance</span>
+                  <div class="slippage-selector">
+                    <button class="slippage-opt" data-slip="0.005">0.5%</button>
+                    <button class="slippage-opt" data-slip="0.01">1%</button>
+                    <button class="slippage-opt active" data-slip="0.02">2%</button>
+                    <button class="slippage-opt" data-slip="0.05">5%</button>
+                    <div class="slippage-custom">
+                      <input type="number" id="slippage-custom-input" class="input mono" placeholder="Custom" min="0.1" max="50" step="0.1" />
+                      <span class="slippage-pct">%</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            </details>
 
             <button id="swap-btn" class="btn btn-primary btn-lg" disabled>Get Quote</button>
             <p class="disclaimer">Swaps are executed through <a href="https://stellar.broker" target="_blank" rel="noopener">Stellar Broker</a> for best-route aggregation across Stellar DEXes.</p>

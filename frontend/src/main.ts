@@ -296,7 +296,7 @@ let activeView: AppView = "leverage";
 
 let expertMode = false;
 const MIN_HF_NORMAL = 1.01;
-const MIN_HF_EXPERT = 1.005;
+const MIN_HF_EXPERT = 1.00001;
 function minHF() { return expertMode ? MIN_HF_EXPERT : MIN_HF_NORMAL; }
 
 // ── Demo mode ────────────────────────────────────────────────────────────────
@@ -641,7 +641,7 @@ function renderApyChart(rs: ReserveStats | undefined, currentLev: number) {
   const container = $("apy-chart");
   if (!rs) { container.innerHTML = ""; return; }
   const maxLev = parseFloat(($("leverage-slider") as HTMLInputElement).max);
-  const W = 300, H = 70, padL = 30, padR = 10, padT = 5, padB = 15;
+  const W = 300, H = 80, padL = 34, padR = 10, padT = 14, padB = 15;
   const steps: { lev: number; apy: number }[] = [];
   for (let l = 1.1; l <= maxLev; l += 0.2) {
     steps.push({ lev: l, apy: rs.netSupplyApr * l - rs.netBorrowCost * (l - 1) });
@@ -656,13 +656,21 @@ function renderApyChart(rs: ReserveStats | undefined, currentLev: number) {
   const curApy = rs.netSupplyApr * currentLev - rs.netBorrowCost * (currentLev - 1);
   const zeroY = y(0);
 
-  container.innerHTML = `<svg viewBox="0 0 ${W} ${H}">
+  // Position the label above or below the dot to avoid clipping
+  const dotCx = x(currentLev).toFixed(1);
+  const dotCy = Number(y(curApy).toFixed(1));
+  const labelAbove = dotCy > padT + 14;
+  const labelY = labelAbove ? dotCy - 8 : dotCy + 14;
+  // Clamp label X so it doesn't overflow left/right
+  const labelX = Math.max(padL + 15, Math.min(W - padR - 15, Number(dotCx)));
+
+  container.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="overflow:visible">
     <line x1="${padL}" y1="${zeroY}" x2="${W - padR}" y2="${zeroY}" class="apy-chart-zero"/>
     <polyline points="${points}" class="apy-chart-line"/>
-    <circle cx="${x(currentLev).toFixed(1)}" cy="${y(curApy).toFixed(1)}" r="4" class="apy-chart-dot"/>
+    <circle cx="${dotCx}" cy="${dotCy}" r="4" class="apy-chart-dot"/>
     <text x="${padL - 2}" y="${padT + 8}" text-anchor="end" class="apy-chart-label">${fmt(maxApy, 0)}%</text>
     <text x="${padL - 2}" y="${H - padB + 2}" text-anchor="end" class="apy-chart-label">${fmt(minApy, 0)}%</text>
-    <text x="${x(currentLev).toFixed(1)}" y="${Number(y(curApy).toFixed(1)) - 8}" text-anchor="middle" class="apy-chart-label">${fmt(curApy, 1)}%</text>
+    <text x="${labelX}" y="${labelY}" text-anchor="middle" class="apy-chart-label apy-chart-cur">${fmt(curApy, 1)}%</text>
   </svg>`;
 }
 
@@ -828,7 +836,8 @@ function renderPosition() {
   const hf = pos.hf;
   const hfEl = $("pos-hf");
   const hfIcon = hf > 1.1 ? "\u2713" : hf > 1.03 ? "\u26A0" : "\u2717";
-  hfEl.textContent = `${hfIcon} ${isFinite(hf) ? fmt(hf, 3) : "\u221E"}`;
+  const hfDec = expertMode ? 5 : 3;
+  hfEl.textContent = `${hfIcon} ${isFinite(hf) ? fmt(hf, hfDec) : "\u221E"}`;
   hfEl.className   = `metric-value ${hf > 1.1 ? "hf-ok" : hf > 1.03 ? "hf-warn" : "hf-bad"}`;
   const barPct = Math.min(100, Math.max(0, (hf - 1) / 0.3 * 100));
   const bar = $("hf-bar");
@@ -844,10 +853,10 @@ function renderPosition() {
   const gaugeEl = document.querySelector(".hf-gauge-container") as HTMLElement;
   if (gaugeEl) gaugeEl.innerHTML = renderHFGauge(hf);
 
-  // HF warning banner (#2)
+  // HF warning banner (#2) — only show below 1.01
   const warnEl = $("hf-pos-warning");
-  if (isFinite(hf) && hf < 1.1) {
-    const isDanger = hf < 1.03;
+  if (isFinite(hf) && hf < 1.01) {
+    const isDanger = hf < 1.003;
     warnEl.className = `hf-pos-warning ${isDanger ? "hf-danger-level" : "hf-warn-level"}`;
     warnEl.innerHTML = `
       <span>${isDanger ? "\u2717" : "\u26A0"} Health Factor is ${fmt(hf, 3)} \u2014 ${isDanger ? "liquidation imminent!" : "approaching liquidation"}</span>
@@ -1069,8 +1078,20 @@ function updatePreview() {
   $("prev-lev").textContent         = `${lev.toFixed(2)}\u00D7`;
   $("prev-supply").textContent      = `${fmt(supply, 2)} ${selectedAsset.symbol}`;
   $("prev-borrow").textContent      = `${fmt(borrow, 2)} ${selectedAsset.symbol}`;
-  $("prev-hf").textContent          = isFinite(hf) ? fmt(hf, 3) : "\u221E";
+  $("prev-hf").textContent          = isFinite(hf) ? fmt(hf, expertMode ? 5 : 4) : "\u221E";
   $("prev-hf").className            = hf > 1.1 ? "hf-ok" : hf > 1.03 ? "hf-warn" : "hf-bad";
+
+  // Borrow headroom: how much more could be borrowed before liquidation
+  if (rs && rs.priceUsd > 0) {
+    const effectiveCollateral = supply * rs.cFactor;
+    const effectiveDebt = borrow / (rs.lFactor ?? 1);
+    const headroom = Math.max(0, effectiveCollateral - effectiveDebt) * rs.priceUsd;
+    $("prev-headroom").textContent = `$${fmt(headroom, 2)}`;
+    $("prev-headroom").className   = headroom < 5 ? "hf-bad" : headroom < 20 ? "hf-warn" : "";
+  } else {
+    $("prev-headroom").textContent = "\u2014";
+    $("prev-headroom").className   = "";
+  }
 
   if (rs) {
     const netApr = rs.netSupplyApr * lev - rs.netBorrowCost * (lev - 1);
@@ -1097,14 +1118,22 @@ function updatePreview() {
   }
 
   // Risk zone labels (#9)
+  const maxSlider = parseFloat(($("leverage-slider") as HTMLInputElement).max) || 10;
   const zones = document.querySelectorAll<HTMLElement>(".slider-zone");
+  const maxiDegenEl = $("zone-maxi-degen");
+  if (expertMode && maxSlider > 15) {
+    maxiDegenEl?.classList.remove("hidden");
+  } else {
+    maxiDegenEl?.classList.add("hidden");
+  }
   zones.forEach(z => {
     const zone = z.dataset.zone;
     const active =
       (zone === "conservative" && lev >= 1.1 && lev < 3) ||
       (zone === "moderate" && lev >= 3 && lev < 6) ||
-      (zone === "aggressive" && lev >= 6 && lev < 9) ||
-      (zone === "degen" && lev >= 9);
+      (zone === "aggressive" && lev >= 6 && lev < 12) ||
+      (zone === "degen" && lev >= 12 && lev < 20) ||
+      (zone === "maxi-degen" && lev >= 20);
     z.classList.toggle("active", !!active);
   });
 
