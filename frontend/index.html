@@ -492,8 +492,8 @@
         <div id="vault-view" class="hidden">
           <section class="card vault-card">
             <div class="card-header">
-              <h2>Leveraged USDC Vault</h2>
-              <span class="vault-badge">DeFindex</span>
+              <h2 id="vault-title">Leveraged USDC Vault</h2>
+              <span class="vault-badge">Strategy</span>
             </div>
 
             <!-- Vault stats -->
@@ -504,13 +504,75 @@
                   <span class="stat-value mono" id="vault-tvl">--</span>
                 </div>
                 <div class="stat-card">
-                  <span class="stat-label">Share price</span>
+                  <span class="stat-label">Share Price</span>
                   <span class="stat-value mono" id="vault-share-price">--</span>
                 </div>
                 <div class="stat-card">
-                  <span class="stat-label">Strategy HF</span>
+                  <span class="stat-label" data-tip="Net APY at current leverage, including BLND emissions">Net APY</span>
+                  <span class="stat-value mono" id="vault-apy">--</span>
+                </div>
+              </div>
+              <div class="stats-row">
+                <div class="stat-card">
+                  <span class="stat-label" data-tip="Current leverage multiplier = collateral / equity">Leverage</span>
+                  <span class="stat-value mono" id="vault-leverage">--</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label" data-tip="Strategy health factor. Below min HF, anyone can trigger rebalance to deleverage.">Health Factor</span>
                   <span class="stat-value" id="vault-hf">--</span>
                 </div>
+                <div class="stat-card">
+                  <span class="stat-label">Min HF</span>
+                  <span class="stat-value mono" id="vault-min-hf">--</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Strategy position breakdown -->
+            <div id="vault-strategy-pos" class="vault-strategy-pos hidden">
+              <h3>Strategy Position</h3>
+              <div class="position-grid vault-pos-grid">
+                <div class="position-metric">
+                  <span class="metric-label">Collateral</span>
+                  <span class="metric-value mono" id="vault-collateral">--</span>
+                </div>
+                <div class="position-metric">
+                  <span class="metric-label">Debt</span>
+                  <span class="metric-value mono" id="vault-debt">--</span>
+                </div>
+                <div class="position-metric">
+                  <span class="metric-label">Net Equity</span>
+                  <span class="metric-value mono" id="vault-equity">--</span>
+                </div>
+                <div class="position-metric">
+                  <span class="metric-label">Supply APR</span>
+                  <span class="metric-value mono" id="vault-supply-apr">--</span>
+                </div>
+                <div class="position-metric">
+                  <span class="metric-label">Borrow APR</span>
+                  <span class="metric-value mono" id="vault-borrow-apr">--</span>
+                </div>
+                <div class="position-metric">
+                  <span class="metric-label">Loops</span>
+                  <span class="metric-value mono" id="vault-loops">--</span>
+                </div>
+              </div>
+              <div class="vault-rebalance-row">
+                <button id="vault-rebalance-btn" class="btn btn-ghost" disabled>Rebalance</button>
+                <span class="vault-rebalance-hint" id="vault-rebalance-hint">HF is healthy</span>
+              </div>
+            </div>
+
+            <!-- HF visual bar -->
+            <div id="vault-hf-bar-wrap" class="vault-hf-bar-wrap hidden">
+              <div class="hf-bar">
+                <div class="hf-bar-fill" id="vault-hf-bar-fill"></div>
+                <div class="hf-bar-marker" id="vault-hf-bar-marker"></div>
+              </div>
+              <div class="hf-bar-labels">
+                <span>1.0 liq</span>
+                <span id="vault-hf-bar-label">--</span>
+                <span>2.0+</span>
               </div>
             </div>
 
@@ -519,39 +581,44 @@
               <h3>Your Position</h3>
               <div class="position-grid vault-pos-grid">
                 <div class="position-metric">
-                  <span class="metric-label">dfToken balance</span>
-                  <span class="metric-value mono" id="vault-user-shares">--</span>
+                  <span class="metric-label">Your Equity</span>
+                  <span class="metric-value mono" id="vault-user-value">--</span>
                 </div>
                 <div class="position-metric">
-                  <span class="metric-label">Current value</span>
-                  <span class="metric-value mono" id="vault-user-value">--</span>
+                  <span class="metric-label">Share of Vault</span>
+                  <span class="metric-value mono" id="vault-user-share-pct">--</span>
                 </div>
               </div>
             </div>
 
-            <!-- Deposit -->
+            <!-- Deposit / Withdraw -->
             <div class="vault-actions">
               <div class="form-group">
-                <label>Deposit USDC</label>
+                <label>Deposit <span id="vault-asset-label">USDC</span></label>
                 <div class="input-wrap">
                   <input type="number" id="vault-deposit-input" class="input mono" placeholder="100" min="0" step="any" />
-                  <span class="input-suffix">USDC</span>
+                  <span class="input-suffix" id="vault-deposit-suffix">USDC</span>
                 </div>
                 <span class="balance-hint">Wallet: <span id="vault-wallet-balance">--</span></span>
               </div>
               <button id="vault-deposit-btn" class="btn btn-primary btn-lg" disabled>Deposit</button>
 
               <div class="form-group" style="margin-top:20px">
-                <label>Withdraw USDC</label>
+                <label>Withdraw <span id="vault-withdraw-label">USDC</span></label>
                 <div class="input-wrap">
-                  <input type="number" id="vault-withdraw-input" class="input mono" placeholder="100" min="0" step="any" />
-                  <span class="input-suffix">USDC</span>
+                  <input type="number" id="vault-withdraw-input" class="input mono" placeholder="50" min="0" step="any" />
+                  <span class="input-suffix" id="vault-withdraw-suffix">USDC</span>
                 </div>
               </div>
               <button id="vault-withdraw-btn" class="btn btn-secondary btn-lg" disabled>Withdraw</button>
             </div>
 
-            <p class="disclaimer">Deposits are managed by the Turbolong Strategy via <a href="https://defindex.io" target="_blank" rel="noopener">DeFindex</a>. Leverage loops are executed atomically; the vault manages position health automatically.</p>
+            <div class="vault-contract-footer">
+              <span class="vault-contract-label">Strategy:</span>
+              <a id="vault-contract-link" class="mono vault-contract-addr" href="#" target="_blank" rel="noopener">--</a>
+            </div>
+
+            <p class="disclaimer">Deposits are managed by the Turbolong Strategy on Blend Protocol. Leverage loops are executed atomically. Rebalance is permissionless — anyone can trigger it when HF drops below the minimum threshold to protect all depositors.</p>
           </section>
         </div>
 

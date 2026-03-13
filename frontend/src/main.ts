@@ -52,11 +52,12 @@ import {
 } from "./blend.ts";
 
 import {
-  VAULTS,
+  getVaults,
   fetchVaultStats,
   fetchUserVaultBalance,
   buildVaultDepositXdr,
   buildVaultWithdrawXdr,
+  buildVaultRebalanceXdr,
   formatUsd,
   formatHf,
   type VaultConfig,
@@ -2084,7 +2085,7 @@ async function loadOverview() {
   });
 
   // Fetch vault positions in parallel
-  const vaultFetches = VAULTS.map(async (vault) => {
+  const vaultFetches = getVaults().map(async (vault) => {
     if (!vault.vaultId) return;
     try {
       const [stats, userPos] = await Promise.all([
@@ -2256,49 +2257,149 @@ $("overview-refresh-btn").addEventListener("click", () => loadOverview());
 
 // ── Vault view ───────────────────────────────────────────────────────────────
 
-const activeVault = VAULTS[0];
+function getActiveVault(): VaultConfig {
+  return getVaults()[0];
+}
+
+let _lastVaultStats: VaultStats | null = null;
 
 async function refreshVaultView() {
+  const vault = getActiveVault();
   const vaultDepBtn = $("vault-deposit-btn") as HTMLButtonElement;
   const vaultWdBtn  = $("vault-withdraw-btn") as HTMLButtonElement;
+  const rebalBtn    = $("vault-rebalance-btn") as HTMLButtonElement;
 
-  // Enable/disable based on wallet connection and vault availability
   const connected = !!userAddress;
-  const vaultReady = !!activeVault.vaultId;
+  const vaultReady = !!vault.vaultId;
 
   vaultDepBtn.disabled = !connected || !vaultReady;
   vaultWdBtn.disabled  = !connected || !vaultReady;
 
+  // Update labels
+  $("vault-title").textContent = vault.name;
+  $("vault-asset-label").textContent = vault.assetSymbol;
+  $("vault-deposit-suffix").textContent = vault.assetSymbol;
+  $("vault-withdraw-label").textContent = vault.assetSymbol;
+  $("vault-withdraw-suffix").textContent = vault.assetSymbol;
+  $("vault-min-hf").textContent = vault.minHf.toFixed(2);
+  $("vault-loops").textContent = String(vault.targetLoops);
+
+  // Contract link
+  const explorerBase = getActiveNetwork() === "testnet"
+    ? "https://stellar.expert/explorer/testnet/contract/"
+    : "https://stellar.expert/explorer/public/contract/";
+  const linkEl = $("vault-contract-link") as HTMLAnchorElement;
+  if (vaultReady) {
+    linkEl.textContent = vault.vaultId.slice(0, 8) + "..." + vault.vaultId.slice(-4);
+    linkEl.href = explorerBase + vault.vaultId;
+  } else {
+    linkEl.textContent = "Not deployed";
+    linkEl.href = "#";
+  }
+
   if (!vaultReady) {
     $("vault-tvl").textContent = "Not deployed";
     $("vault-share-price").textContent = "--";
+    $("vault-apy").textContent = "--";
+    $("vault-leverage").textContent = "--";
     $("vault-hf").textContent = "--";
+    $("vault-strategy-pos").classList.add("hidden");
+    $("vault-hf-bar-wrap").classList.add("hidden");
     return;
   }
 
+  // Fetch pool reserves for APY calculation
+  let poolReserves: ReserveStats[] | undefined;
+  try {
+    const pool = getKnownPools().find(p => p.id === vault.poolId);
+    if (pool) {
+      poolReserves = await fetchAllReserves(pool, userAddress ?? "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF");
+    }
+  } catch { /* APY will show as -- */ }
+
   // Fetch vault stats
-  const stats = await fetchVaultStats(activeVault);
+  const stats = await fetchVaultStats(vault, poolReserves);
+  _lastVaultStats = stats;
+
   if (stats) {
     $("vault-tvl").textContent = formatUsd(stats.totalEquity);
     $("vault-share-price").textContent = formatUsd(stats.sharePrice, 6);
+
+    // Net APY
+    const apyEl = $("vault-apy");
+    if (stats.netApy !== null) {
+      apyEl.textContent = (stats.netApy >= 0 ? "+" : "") + stats.netApy.toFixed(1) + "%";
+      apyEl.className = "stat-value mono " + (stats.netApy > 0 ? "hf-ok" : "hf-bad");
+    } else {
+      apyEl.textContent = "--";
+      apyEl.className = "stat-value mono";
+    }
+
+    // Leverage
+    $("vault-leverage").textContent = stats.leverage.toFixed(2) + "\u00d7";
+
+    // HF
     const hf = formatHf(stats.healthFactor);
     const hfEl = $("vault-hf");
     hfEl.textContent = hf.text;
     hfEl.className = "stat-value " + hf.cls;
+
+    // Strategy position breakdown
+    $("vault-strategy-pos").classList.remove("hidden");
+    $("vault-collateral").textContent = fmt(stats.collateralValue, 2) + " " + vault.assetSymbol;
+    $("vault-debt").textContent = fmt(stats.debtValue, 2) + " " + vault.assetSymbol;
+    $("vault-equity").textContent = fmt(stats.totalEquity, 2) + " " + vault.assetSymbol;
+
+    if (stats.supplyApr !== null) {
+      $("vault-supply-apr").textContent = "+" + stats.supplyApr.toFixed(2) + "%";
+      $("vault-supply-apr").className = "metric-value mono hf-ok";
+    }
+    if (stats.borrowApr !== null) {
+      $("vault-borrow-apr").textContent = "-" + stats.borrowApr.toFixed(2) + "%";
+      $("vault-borrow-apr").className = "metric-value mono hf-bad";
+    }
+
+    // HF bar visualization
+    $("vault-hf-bar-wrap").classList.remove("hidden");
+    const hfVal = isFinite(stats.healthFactor) ? stats.healthFactor : 3;
+    const hfPct = Math.min(Math.max((hfVal - 1) / 1.0 * 100, 0), 100); // 1.0 to 2.0 range
+    const fillEl = $("vault-hf-bar-fill") as HTMLElement;
+    const markerEl = $("vault-hf-bar-marker") as HTMLElement;
+    fillEl.style.width = hfPct + "%";
+    fillEl.className = "hf-bar-fill " + (hfVal >= 1.1 ? (hfVal >= 1.5 ? "hf-fill-ok" : "hf-fill-warn") : "hf-fill-bad");
+    markerEl.style.left = hfPct + "%";
+    $("vault-hf-bar-label").textContent = isFinite(stats.healthFactor) ? stats.healthFactor.toFixed(3) : "\u221e";
+
+    // Rebalance button — enabled only when HF < min_hf
+    const needsRebalance = isFinite(stats.healthFactor) && stats.healthFactor < vault.minHf;
+    rebalBtn.disabled = !connected || !needsRebalance;
+    const hintEl = $("vault-rebalance-hint");
+    if (needsRebalance) {
+      hintEl.textContent = "HF below minimum — rebalance available";
+      hintEl.className = "vault-rebalance-hint hf-bad";
+    } else {
+      hintEl.textContent = "HF is healthy";
+      hintEl.className = "vault-rebalance-hint hf-ok";
+    }
   }
 
   // Fetch user position if connected
   if (connected && userAddress) {
-    // Wallet balance
-    const bal = await fetchAssetBalance(activeVault.assetId, userAddress);
+    const bal = await fetchAssetBalance(userAddress, vault.assetId);
     $("vault-wallet-balance").textContent =
-      (bal / 10 ** activeVault.decimals).toFixed(2) + " " + activeVault.assetSymbol;
+      (bal / 10 ** vault.decimals).toFixed(2) + " " + vault.assetSymbol;
 
-    const pos = await fetchUserVaultBalance(activeVault, userAddress);
+    const pos = await fetchUserVaultBalance(vault, userAddress);
     if (pos && pos.underlyingValue > 0) {
       $("vault-user-pos").classList.remove("hidden");
-      $("vault-user-shares").textContent = pos.shares.toFixed(4);
       $("vault-user-value").textContent = formatUsd(pos.underlyingValue);
+      // Share of vault
+      if (stats && stats.totalEquity > 0) {
+        const pct = (pos.underlyingValue / stats.totalEquity) * 100;
+        $("vault-user-share-pct").textContent = pct.toFixed(1) + "%";
+      } else {
+        $("vault-user-share-pct").textContent = "--";
+      }
     } else {
       $("vault-user-pos").classList.add("hidden");
     }
@@ -2307,7 +2408,8 @@ async function refreshVaultView() {
 
 // Vault deposit
 $("vault-deposit-btn").addEventListener("click", async () => {
-  if (!userAddress || !activeVault.vaultId) return;
+  const vault = getActiveVault();
+  if (!userAddress || !vault.vaultId) return;
   const amount = parseFloat(($("vault-deposit-input") as HTMLInputElement).value);
   if (!amount || amount <= 0) return;
 
@@ -2315,7 +2417,7 @@ $("vault-deposit-btn").addEventListener("click", async () => {
     ($("vault-deposit-btn") as HTMLButtonElement).disabled = true;
     ($("vault-deposit-btn") as HTMLButtonElement).textContent = "Depositing...";
 
-    const xdr = await buildVaultDepositXdr(activeVault, userAddress, amount);
+    const xdr = await buildVaultDepositXdr(vault, userAddress, amount);
     const { signedTxXdr } = await StellarWalletsKit.signTransaction(xdr);
     await submitSignedXdr(signedTxXdr);
     await refreshVaultView();
@@ -2330,7 +2432,8 @@ $("vault-deposit-btn").addEventListener("click", async () => {
 
 // Vault withdraw
 $("vault-withdraw-btn").addEventListener("click", async () => {
-  if (!userAddress || !activeVault.vaultId) return;
+  const vault = getActiveVault();
+  if (!userAddress || !vault.vaultId) return;
   const amount = parseFloat(($("vault-withdraw-input") as HTMLInputElement).value);
   if (!amount || amount <= 0) return;
 
@@ -2338,7 +2441,7 @@ $("vault-withdraw-btn").addEventListener("click", async () => {
     ($("vault-withdraw-btn") as HTMLButtonElement).disabled = true;
     ($("vault-withdraw-btn") as HTMLButtonElement).textContent = "Withdrawing...";
 
-    const xdr = await buildVaultWithdrawXdr(activeVault, userAddress, amount);
+    const xdr = await buildVaultWithdrawXdr(vault, userAddress, amount);
     const { signedTxXdr } = await StellarWalletsKit.signTransaction(xdr);
     await submitSignedXdr(signedTxXdr);
     await refreshVaultView();
@@ -2348,6 +2451,27 @@ $("vault-withdraw-btn").addEventListener("click", async () => {
   } finally {
     ($("vault-withdraw-btn") as HTMLButtonElement).disabled = false;
     ($("vault-withdraw-btn") as HTMLButtonElement).textContent = "Withdraw";
+  }
+});
+
+// Vault rebalance
+$("vault-rebalance-btn").addEventListener("click", async () => {
+  const vault = getActiveVault();
+  if (!userAddress || !vault.vaultId) return;
+
+  try {
+    ($("vault-rebalance-btn") as HTMLButtonElement).disabled = true;
+    ($("vault-rebalance-btn") as HTMLButtonElement).textContent = "Rebalancing...";
+
+    const xdr = await buildVaultRebalanceXdr(vault, userAddress);
+    const { signedTxXdr } = await StellarWalletsKit.signTransaction(xdr);
+    await submitSignedXdr(signedTxXdr);
+    await refreshVaultView();
+  } catch (err: any) {
+    alert("Rebalance failed: " + (err.message || err));
+  } finally {
+    ($("vault-rebalance-btn") as HTMLButtonElement).disabled = false;
+    ($("vault-rebalance-btn") as HTMLButtonElement).textContent = "Rebalance";
   }
 });
 

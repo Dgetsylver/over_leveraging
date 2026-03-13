@@ -15,33 +15,68 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 
-import { server as blendServer, getNetworkPassphrase } from "./blend.ts";
+import {
+  server as blendServer,
+  getNetworkPassphrase,
+  getActiveNetwork,
+  fetchAllReserves,
+  type ReserveStats,
+} from "./blend.ts";
 
 // ── Vault configuration ──────────────────────────────────────────────────────
 
 export interface VaultConfig {
-  /** DeFindex vault contract address */
+  /** Strategy contract address */
   vaultId: string;
   /** Underlying asset contract address (e.g. USDC) */
   assetId: string;
+  /** Blend pool contract address (for APR lookups) */
+  poolId: string;
   /** Human-readable name */
   name: string;
   /** Asset symbol (e.g. "USDC") */
   assetSymbol: string;
   /** Asset decimals */
   decimals: number;
+  /** Strategy c_factor (1e7 scaled) */
+  cFactor: number;
+  /** Number of leverage loops */
+  targetLoops: number;
+  /** Minimum HF before rebalance triggers (1e7 scaled) */
+  minHf: number;
 }
 
-// Placeholder vault — to be updated with deployed vault address
-export const VAULTS: VaultConfig[] = [
+const MAINNET_VAULTS: VaultConfig[] = [
   {
-    vaultId: "", // TODO: set after deployment
+    vaultId: "", // TODO: set after mainnet deployment
     assetId: "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75", // USDC
+    poolId: "CDMAVJPFXPADND3YRL4BSM3AKZWCTFMX27GLLXCML3PD62HEQS5FPVAI",
     name: "Leveraged USDC (Etherfuse)",
     assetSymbol: "USDC",
     decimals: 7,
+    cFactor: 0.90,
+    targetLoops: 3,
+    minHf: 1.05,
   },
 ];
+
+const TESTNET_VAULTS: VaultConfig[] = [
+  {
+    vaultId: "CDOETIUHCETALQMBMYUXGFJFA34KDTV74AMHTWXJLY2XUVNZ23JDLJZA",
+    assetId: "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA", // USDC
+    poolId: "CAPBMXIQTICKWFPWFDJWMAKBXBPJZUKLNONQH3MLPLLBKQ643CYN5PRW",
+    name: "Leveraged USDC (Testnet)",
+    assetSymbol: "USDC",
+    decimals: 7,
+    cFactor: 0.90,
+    targetLoops: 3,
+    minHf: 1.05,
+  },
+];
+
+export function getVaults(): VaultConfig[] {
+  return getActiveNetwork() === "testnet" ? TESTNET_VAULTS : MAINNET_VAULTS;
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +89,12 @@ export interface VaultStats {
   bRate: bigint;
   dRate: bigint;
   healthFactor: number;    // Strategy HF (1e7 scaled → float)
+  collateralValue: number; // b_tokens * b_rate in underlying
+  debtValue: number;       // d_tokens * d_rate in underlying
+  leverage: number;        // collateralValue / equity
+  netApy: number | null;   // Estimated leveraged APY (null if unavailable)
+  supplyApr: number | null;
+  borrowApr: number | null;
 }
 
 export interface UserVaultPosition {
@@ -90,8 +131,12 @@ async function invokeRead(contractId: string, method: string, args: xdr.ScVal[] 
 
 /**
  * Fetch vault stats from the strategy contract's `position()` method.
+ * Optionally enriches with pool APR data for net APY calculation.
  */
-export async function fetchVaultStats(vault: VaultConfig): Promise<VaultStats | null> {
+export async function fetchVaultStats(
+  vault: VaultConfig,
+  poolReserves?: ReserveStats[]
+): Promise<VaultStats | null> {
   if (!vault.vaultId) return null;
 
   try {
@@ -110,10 +155,30 @@ export async function fetchVaultStats(vault: VaultConfig): Promise<VaultStats | 
 
     const sharePrice = totalShares > 0 ? totalEquity / (totalShares / scalar) : 1;
 
+    // Compute collateral/debt in underlying
+    const collateralValue = Number(bTokens * bRate / BigInt(1e12)) / scalar;
+    const debtValue = Number(dTokens * dRate / BigInt(1e12)) / scalar;
+    const leverage = totalEquity > 0 ? collateralValue / totalEquity : 1;
+
     // Fetch HF
     const hfResult = await invokeRead(vault.vaultId, "health_factor");
     const hfRaw = Number(scValToNative(hfResult));
-    const healthFactor = hfRaw / 1e7;
+    const healthFactor = hfRaw > 1e15 ? Infinity : hfRaw / 1e7;
+
+    // Compute leveraged net APY from pool reserve data
+    let netApy: number | null = null;
+    let supplyApr: number | null = null;
+    let borrowApr: number | null = null;
+
+    if (poolReserves) {
+      const assetReserve = poolReserves.find(r => r.asset.id === vault.assetId);
+      if (assetReserve) {
+        supplyApr = assetReserve.netSupplyApr;
+        borrowApr = assetReserve.netBorrowCost;
+        // Net APY = supply_apr × leverage - borrow_apr × (leverage - 1)
+        netApy = supplyApr * leverage - borrowApr * (leverage - 1);
+      }
+    }
 
     return {
       totalEquity,
@@ -124,6 +189,12 @@ export async function fetchVaultStats(vault: VaultConfig): Promise<VaultStats | 
       bRate,
       dRate,
       healthFactor,
+      collateralValue,
+      debtValue,
+      leverage,
+      netApy,
+      supplyApr,
+      borrowApr,
     };
   } catch {
     return null;
@@ -226,6 +297,34 @@ export async function buildVaultWithdrawXdr(
   const sim = await blendServer.simulateTransaction(tx);
   if (!SorobanRpc.Api.isSimulationSuccess(sim)) {
     throw new Error(`Withdraw simulation failed`);
+  }
+
+  const prepared = SorobanRpc.assembleTransaction(tx, sim).build();
+  return prepared.toXDR();
+}
+
+/**
+ * Build a rebalance transaction XDR.
+ * Permissionless — callable by anyone when HF < min_hf.
+ */
+export async function buildVaultRebalanceXdr(
+  vault: VaultConfig,
+  userAddress: string,
+): Promise<string> {
+  const account = await blendServer.getAccount(userAddress);
+  const contract = new Contract(vault.vaultId);
+
+  const tx = new TransactionBuilder(account, {
+    fee: "10000000",
+    networkPassphrase: getNetworkPassphrase(),
+  })
+    .addOperation(contract.call("rebalance"))
+    .setTimeout(300)
+    .build();
+
+  const sim = await blendServer.simulateTransaction(tx);
+  if (!SorobanRpc.Api.isSimulationSuccess(sim)) {
+    throw new Error(`Rebalance simulation failed — HF may already be healthy`);
   }
 
   const prepared = SorobanRpc.assembleTransaction(tx, sim).build();

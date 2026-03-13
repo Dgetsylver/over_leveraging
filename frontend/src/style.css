@@ -934,7 +934,7 @@ main { flex: 1; max-width: 1060px; width: 100%; margin: 0 auto; padding: 24px 28
 
 /* ── Vault view ─────────────────────────────────────────────────────────── */
 
-.vault-card { max-width: 560px; margin: 0 auto; }
+.vault-card { max-width: 620px; margin: 0 auto; }
 
 .vault-badge {
   font-size: 11px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase;
@@ -943,15 +943,63 @@ main { flex: 1; max-width: 1060px; width: 100%; margin: 0 auto; padding: 24px 28
 }
 
 .vault-stats { margin-bottom: 20px; }
+.vault-stats .stats-row {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+  margin-bottom: 10px;
+}
+
+.vault-strategy-pos {
+  border-top: 1px solid var(--border);
+  padding-top: 16px; margin-bottom: 16px;
+}
+.vault-strategy-pos h3 { font-size: 14px; margin: 0 0 12px; color: var(--text-2); }
 
 .vault-user-pos {
   border-top: 1px solid var(--border);
   padding-top: 16px; margin-bottom: 20px;
 }
 .vault-user-pos h3 { font-size: 14px; margin: 0 0 12px; color: var(--text-2); }
-.vault-pos-grid { grid-template-columns: 1fr 1fr; }
+.vault-pos-grid { grid-template-columns: 1fr 1fr 1fr; }
+
+.vault-rebalance-row {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border);
+}
+.vault-rebalance-hint { font-size: 12px; }
+
+.vault-hf-bar-wrap {
+  margin: 12px 0 20px;
+}
+.hf-bar {
+  position: relative; height: 8px; background: var(--surface2);
+  border-radius: 4px; overflow: visible;
+}
+.hf-bar-fill {
+  height: 100%; border-radius: 4px; transition: width .3s;
+}
+.hf-fill-ok  { background: var(--success); }
+.hf-fill-warn { background: var(--warning); }
+.hf-fill-bad  { background: var(--danger); }
+.hf-bar-marker {
+  position: absolute; top: -3px; width: 3px; height: 14px;
+  background: var(--text); border-radius: 2px; transition: left .3s;
+  transform: translateX(-1px);
+}
+.hf-bar-labels {
+  display: flex; justify-content: space-between;
+  font-size: 10px; color: var(--text-3); margin-top: 4px; font-family: var(--mono);
+}
 
 .vault-actions { display: flex; flex-direction: column; gap: 8px; }
+
+.vault-contract-footer {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);
+  font-size: 12px; color: var(--text-3);
+}
+.vault-contract-label { font-weight: 600; }
+.vault-contract-addr { font-size: 12px; color: var(--text-2); text-decoration: none; }
+.vault-contract-addr:hover { color: var(--primary); }
 
 /* ── Reduced motion ──────────────────────────────────────────────────────── */
 
