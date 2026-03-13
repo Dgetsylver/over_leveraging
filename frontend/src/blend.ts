@@ -5,10 +5,13 @@
 import {
   Account,
   Address,
+  Asset,
   BASE_FEE,
   Contract,
+  Horizon,
   Networks,
   nativeToScVal,
+  Operation,
   rpc as SorobanRpc,
   scValToNative,
   TransactionBuilder,
@@ -173,7 +176,24 @@ export function getPoolAssets(pool: PoolDef): AssetInfo[] {
 
 // ── RPC ───────────────────────────────────────────────────────────────────────
 
-export const server = new SorobanRpc.Server(RPC_URL);
+export const server  = new SorobanRpc.Server(RPC_URL);
+const horizon = new Horizon.Server("https://horizon.stellar.org");
+
+// ── Classic asset mapping (Soroban contract ID → classic CODE:ISSUER) ─────────
+
+const CLASSIC_ASSETS: Record<string, Asset> = {
+  "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA": Asset.native(),
+  "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75": new Asset("USDC", "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"),
+  "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV": new Asset("EURC", "GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2"),
+  "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK": new Asset("AQUA", "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA"),
+  "CB226ZOEYXTBPD3QEGABTJYSKZVBP2PASEISLG3SBMTN5CE4QZUVZ3CE": new Asset("USDGLO", "GBBS25EGYQPGEZCGCFBKG4OAGFXU6DSOQBGTHELLJT3HZXZJ34HWS6XV"),
+  "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR": new Asset("USTRY", "GCRYUGD5NVARGXT56XEZI5CIFCQETYHAPQQTHO2O3IQZTHDH4LATMYWC"),
+  "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV": new Asset("CETES", "GCRYUGD5NVARGXT56XEZI5CIFCQETYHAPQQTHO2O3IQZTHDH4LATMYWC"),
+  "CCCRWH6Q3FNP3I2I57BDLM5AFAT7O6OF6GKQOC6SSJNDAVRZ57SPHGU2": new Asset("PYUSD", "GDQE7IXJ4HUHV6RQHIUPRJSEZE4DRS5WY577O2FY6YQ5LVWZ7JZTU2V5"),
+  "CD6M4R2322BYCY2LNWM74PEBQAQ63SA3DUJLI3L4225U4ZVCLMSCBCIS": new Asset("TESOURO", "GCRYUGD5NVARGXT56XEZI5CIFCQETYHAPQQTHO2O3IQZTHDH4LATMYWC"),
+};
+
+const BLND_CLASSIC = new Asset("BLND", "GDJEHTBE6ZHUXSWFI642DCGLUOECLHPF3KSXHPXTSTJ7E3JF6MQ5EZYY");
 
 // ── ScVal helpers ─────────────────────────────────────────────────────────────
 
@@ -828,6 +848,90 @@ export async function buildClaimXdr(
   return SorobanRpc.assembleTransaction(tx, sim).build().toXDR();
 }
 
+// ── Swap BLND → asset via Stellar DEX path payment ───────────────────────
+
+/**
+ * Build a path_payment_strict_send to swap BLND → target asset using Horizon
+ * path finding. Returns the XDR ready for signing.
+ *
+ * @param blndAmount - full BLND tokens (e.g. 12.345)
+ * @param destAssetId - Soroban contract ID of the target asset
+ * @param minDestAmount - minimum acceptable output (after slippage)
+ */
+export async function buildSwapBlndXdr(
+  userAddress: string,
+  blndAmount: number,
+  destAssetId: string,
+  slippage: number = 0.02,
+): Promise<{ xdr: string; estimate: string }> {
+  const destAsset = CLASSIC_ASSETS[destAssetId];
+  if (!destAsset) throw new Error(`No classic asset mapping for ${destAssetId}`);
+
+  const sendAmount = blndAmount.toFixed(7);
+
+  // Find best path via Horizon
+  const paths = await horizon
+    .strictSendPaths(BLND_CLASSIC, sendAmount, [destAsset])
+    .call();
+
+  if (paths.records.length === 0)
+    throw new Error("No swap path found for BLND → " + (destAsset.isNative() ? "XLM" : destAsset.getCode()));
+
+  // Pick the best path (first record = highest destination amount)
+  const best = paths.records[0];
+  const estimatedDest = best.destination_amount;
+  const minDest = (parseFloat(estimatedDest) * (1 - slippage)).toFixed(7);
+
+  // Build intermediate path assets
+  const pathAssets = best.path.map((p: any) =>
+    p.asset_type === "native" ? Asset.native() : new Asset(p.asset_code, p.asset_issuer)
+  );
+
+  const acc = await horizon.loadAccount(userAddress);
+  const tx  = new TransactionBuilder(acc, {
+    fee: "10000",
+    networkPassphrase: NETWORK,
+  })
+    .addOperation(Operation.pathPaymentStrictSend({
+      sendAsset:   BLND_CLASSIC,
+      sendAmount:  sendAmount,
+      destination: userAddress,
+      destAsset:   destAsset,
+      destMin:     minDest,
+      path:        pathAssets,
+    }))
+    .setTimeout(60)
+    .build();
+
+  return { xdr: tx.toXDR(), estimate: estimatedDest };
+}
+
+/**
+ * Check if a swap path exists for BLND → target asset and return estimated output.
+ */
+export async function estimateBlndSwap(
+  blndAmount: number,
+  destAssetId: string,
+): Promise<{ estimate: number; path: string } | null> {
+  const destAsset = CLASSIC_ASSETS[destAssetId];
+  if (!destAsset) return null;
+
+  try {
+    const paths = await horizon
+      .strictSendPaths(BLND_CLASSIC, blndAmount.toFixed(7), [destAsset])
+      .call();
+    if (paths.records.length === 0) return null;
+    const best = paths.records[0];
+    const via = best.path.map((p: any) => p.asset_type === "native" ? "XLM" : p.asset_code).join(" → ");
+    return {
+      estimate: parseFloat(best.destination_amount),
+      path: via ? `BLND → ${via} → ${destAsset.isNative() ? "XLM" : destAsset.getCode()}` : `BLND → ${destAsset.isNative() ? "XLM" : destAsset.getCode()}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ── Submit signed XDR ─────────────────────────────────────────────────────────
 
 export async function submitSignedXdr(signedXdr: string): Promise<string> {
@@ -844,4 +948,11 @@ export async function submitSignedXdr(signedXdr: string): Promise<string> {
       throw new Error(`On-chain failure: ${poll.resultXdr?.toXDR("base64")}`);
   }
   throw new Error("Confirmation timed out");
+}
+
+/** Submit a classic (non-Soroban) transaction via Horizon. */
+export async function submitClassicXdr(signedXdr: string): Promise<string> {
+  const tx = TransactionBuilder.fromXDR(signedXdr, NETWORK);
+  const result = await horizon.submitTransaction(tx);
+  return (result as any).hash;
 }

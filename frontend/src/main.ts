@@ -24,7 +24,10 @@ import {
   buildCloseSubmitXdr,
   buildRepayXdr,
   buildClaimXdr,
+  buildSwapBlndXdr,
+  estimateBlndSwap,
   submitSignedXdr,
+  submitClassicXdr,
   hfForLeverage,
   maxLeverageFor,
   type AssetInfo,
@@ -386,6 +389,43 @@ function renderPosition() {
     liqDaysEl.className   = "metric-value";
     liqNoteEl.textContent = "";
   }
+
+  // Compound row: show swap estimate if there's pending BLND
+  updateCompoundEstimate();
+}
+
+async function updateCompoundEstimate() {
+  const compoundRow = $("compound-row");
+  const compoundBtn = $("compound-btn") as HTMLButtonElement;
+  const estimateEl  = $("compound-estimate");
+
+  // Check pending BLND from the displayed value
+  const blndText = $("pos-blnd").textContent ?? "";
+  const blndMatch = blndText.match(/([\d.]+)/);
+  const pendingBlnd = blndMatch ? parseFloat(blndMatch[1]) : 0;
+
+  if (pendingBlnd <= 0 || !positions.byAsset.has(selectedAsset.id)) {
+    compoundRow.classList.add("hidden");
+    return;
+  }
+
+  compoundRow.classList.remove("hidden");
+  estimateEl.textContent = `~${fmt(pendingBlnd, 2)} BLND → estimating…`;
+  compoundBtn.disabled = true;
+
+  try {
+    const est = await estimateBlndSwap(pendingBlnd, selectedAsset.id);
+    if (est) {
+      estimateEl.textContent = `~${fmt(pendingBlnd, 2)} BLND → ~${fmt(est.estimate, 4)} ${selectedAsset.symbol}`;
+      compoundBtn.disabled = false;
+    } else {
+      estimateEl.textContent = `~${fmt(pendingBlnd, 2)} BLND (no swap path found)`;
+      compoundBtn.disabled = true;
+    }
+  } catch {
+    estimateEl.textContent = `~${fmt(pendingBlnd, 2)} BLND (estimate unavailable)`;
+    compoundBtn.disabled = true;
+  }
 }
 
 // ── Leverage preview ──────────────────────────────────────────────────────────
@@ -589,6 +629,56 @@ async function claimBlnd() {
   }
 }
 
+/** Claim BLND from pool, then swap to the selected asset via Stellar DEX path payment. */
+async function claimAndConvert() {
+  if (!userAddress) return;
+  const pos = positions.byAsset.get(selectedAsset.id);
+  if (!pos) return;
+
+  // Step 1: Claim BLND
+  const tokenIds: number[] = [];
+  for (const p of positions.byAsset.values()) {
+    if (p.bTokens > 0n) tokenIds.push(p.asset.supplyTokenId);
+    if (p.dTokens > 0n) tokenIds.push(p.asset.borrowTokenId);
+  }
+  if (tokenIds.length === 0) { toast("No positions to claim from", "error"); return; }
+
+  setLoading($("compound-btn") as HTMLButtonElement, true);
+  try {
+    // Claim
+    const claimXdr = await buildClaimXdr(selectedPool, userAddress, tokenIds);
+    await signAndSubmit(claimXdr, "Claim BLND");
+
+    // Check actual BLND balance after claim
+    const blndBalance = await fetchAssetBalance(userAddress, "CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY");
+    if (blndBalance <= 0) { toast("No BLND to convert", "error"); await loadAll(); return; }
+
+    // Step 2: Swap BLND → position asset via DEX path payment (classic tx)
+    toast(`Swapping ${fmt(blndBalance, 2)} BLND → ${selectedAsset.symbol}…`, "info");
+    const { xdr: swapXdr, estimate } = await buildSwapBlndXdr(
+      userAddress,
+      blndBalance,
+      selectedAsset.id,
+      0.02,
+    );
+    // Sign via wallet kit
+    toast(`Sign swap in your wallet…`, "info");
+    const { signedTxXdr } = await StellarWalletsKit.signTransaction(swapXdr, {
+      networkPassphrase: NETWORK,
+      address: userAddress!,
+    });
+    toast(`Submitting swap…`, "info");
+    const swapHash = await submitClassicXdr(signedTxXdr);
+    toast(`Converted ${fmt(blndBalance, 2)} BLND → ~${estimate} ${selectedAsset.symbol}`, "success");
+
+    await loadAll();
+  } catch (e: any) {
+    toast(e?.message ?? "Claim & Convert failed", "error");
+  } finally {
+    setLoading($("compound-btn") as HTMLButtonElement, false);
+  }
+}
+
 function setLoading(btn: HTMLButtonElement, on: boolean) {
   btn.disabled = on;
   btn.classList.toggle("btn-loading", on);
@@ -687,11 +777,11 @@ function switchView(view: AppView) {
 const SWAP_ASSETS: { symbol: string; brokerId: string }[] = [
   { symbol: "XLM",     brokerId: "XLM" },
   { symbol: "USDC",    brokerId: "USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN" },
-  { symbol: "EURC",    brokerId: "EURC-GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4IBER" },
+  { symbol: "EURC",    brokerId: "EURC-GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2" },
   { symbol: "AQUA",    brokerId: "AQUA-GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA" },
-  { symbol: "BLND",    brokerId: "BLND-GATALTGTWIOT6BUDBCZM3Q4OQ4BO2COLOAZ7GDOHTWBKL7GVOF7TPQS6" },
+  { symbol: "BLND",    brokerId: "BLND-GDJEHTBE6ZHUXSWFI642DCGLUOECLHPF3KSXHPXTSTJ7E3JF6MQ5EZYY" },
   { symbol: "yXLM",    brokerId: "yXLM-GARDNV3Q7YGT4AKSDF25LT32YSCCW4EV22Y2TV3I2PU2MMXJTEDL5T55" },
-  { symbol: "USDGLO",  brokerId: "USDGLO-GBBS25EGYQPGEZCGCFBKG4OAGFJ2HIFFYJQFOU5YQFWKDMFPN2SFXONM" },
+  { symbol: "USDGLO",  brokerId: "USDGLO-GBBS25EGYQPGEZCGCFBKG4OAGFXU6DSOQBGTHELLJT3HZXZJ34HWS6XV" },
 ];
 
 function getSwapAssetList(): { symbol: string; brokerId: string }[] {
@@ -876,6 +966,7 @@ $("close-btn").addEventListener("click",      closePosition);
 $("repay-btn").addEventListener("click",      repayDebt);
 $("claim-btn").addEventListener("click",      claimBlnd);
 $("max-btn").addEventListener("click",        maxDeposit);
+$("compound-btn").addEventListener("click",   claimAndConvert);
 
 ($("leverage-slider") as HTMLInputElement).addEventListener("input",  updatePreview);
 // Live preview while typing (no clamping so user can type multi-digit numbers like "10")

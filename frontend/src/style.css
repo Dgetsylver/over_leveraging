@@ -313,6 +313,17 @@ main { flex: 1; max-width: 1060px; width: 100%; margin: 0 auto; padding: 24px 28
 .hf-bar-wrap { height: 3px; background: var(--hf-bar-bg); border-radius: 2px; margin-top: 7px; overflow: hidden; }
 .hf-bar { height: 100%; border-radius: 2px; transition: width .4s, background .4s; }
 
+/* ── Compound row (Claim & Convert) ─────────────────────────────────────── */
+
+.compound-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; margin-bottom: 14px;
+  background: var(--metric-bg); border: 1px solid var(--border); border-radius: var(--r-xs);
+}
+.compound-info { display: flex; flex-direction: column; gap: 2px; }
+.compound-label { font-size: 11px; color: var(--text-2); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.compound-estimate { font-size: 13px; color: var(--text); }
+
 .empty-state { color: var(--text-3); font-size: 14px; padding: 24px 0; text-align: center; }
 .empty-icon { font-size: 36px; margin-bottom: 8px; opacity: .5; }
 
