@@ -737,11 +737,14 @@ export async function buildCloseSubmitXdr(
   pos: AssetPosition,
 ): Promise<string> {
   const withdrawAmount = pos.bTokens * pos.bRate / RATE_DEC;
-  const repayAmount    = pos.dTokens * pos.dRate / RATE_DEC;
-  const requests       = buildRequestsVec([
-    buildRequest(pos.asset.id, repayAmount,    REPAY),
-    buildRequest(pos.asset.id, withdrawAmount, WITHDRAW_COLLATERAL),
-  ]);
+  const reqItems: xdr.ScVal[] = [];
+  // Only include REPAY if there's actual debt — repaying 0 triggers #1219
+  if (pos.dTokens > 0n) {
+    const repayAmount = pos.dTokens * pos.dRate / RATE_DEC;
+    reqItems.push(buildRequest(pos.asset.id, repayAmount, REPAY));
+  }
+  reqItems.push(buildRequest(pos.asset.id, withdrawAmount, WITHDRAW_COLLATERAL));
+  const requests = buildRequestsVec(reqItems);
 
   const poolContract = new Contract(pool.id);
   const addrScVal    = new Address(userAddress).toScVal();
