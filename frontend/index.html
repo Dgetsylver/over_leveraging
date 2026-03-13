@@ -12,10 +12,10 @@
 </head>
 <body>
   <!-- Disclaimer modal -->
-  <div id="disclaimer-overlay" class="disclaimer-overlay hidden">
+  <div id="disclaimer-overlay" class="disclaimer-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="disclaimer-title">
     <div class="disclaimer-modal">
       <div class="disclaimer-modal-icon">&#9888;</div>
-      <h2>Important Disclaimer</h2>
+      <h2 id="disclaimer-title">Important Disclaimer</h2>
       <div class="disclaimer-body">
         <p>This is an <strong>experimental project</strong>. Using leveraged positions on DeFi protocols carries significant financial risk, including the <strong>complete loss of your deposited funds</strong>.</p>
         <p>By proceeding, you acknowledge that:</p>
@@ -50,7 +50,7 @@
               <span class="protocol-dot protocol-dot-live"></span>
               Blend Protocol
             </button>
-            <div id="pool-tabs" class="pool-tabs"></div>
+            <div id="pool-tabs" class="pool-tabs" role="tablist"></div>
           </div>
           <!-- Coming soon -->
           <div class="protocol-section">
@@ -70,17 +70,21 @@
         </nav>
       </div>
       <div class="sidebar-bottom">
-        <button id="expert-toggle" class="sidebar-btn expert-toggle" title="Expert mode: lower minimum HF to 1.005">Expert</button>
-        <button id="theme-toggle" class="sidebar-btn theme-toggle" title="Toggle light/dark mode">&#9790;</button>
+        <button id="expert-toggle" class="sidebar-btn expert-toggle" data-tip="Expert mode: lower minimum HF to 1.005">Expert</button>
+        <button id="theme-toggle" class="sidebar-btn theme-toggle" data-tip="Toggle light/dark mode">&#9790;</button>
       </div>
     </aside>
+
+    <!-- Sidebar backdrop for mobile -->
+    <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
 
     <!-- Main content -->
     <div class="main-wrap">
       <!-- Top bar -->
       <header>
         <div class="header-left">
-          <div id="asset-tabs" class="asset-tabs"></div>
+          <button id="hamburger-btn" class="hamburger-btn" aria-label="Open navigation menu">&#9776;</button>
+          <div id="asset-tabs" class="asset-tabs" role="tablist"></div>
         </div>
         <div id="wallet-area">
           <button id="connect-btn" class="btn btn-primary btn-connect">Connect Wallet</button>
@@ -89,7 +93,7 @@
               <span class="wallet-dot"></span>
               <span id="wallet-address" class="mono"></span>
             </div>
-            <button id="switch-wallet-btn" class="btn btn-ghost btn-sm" title="Switch to a different account">Switch</button>
+            <button id="switch-wallet-btn" class="btn btn-ghost btn-sm" data-tip="Switch to a different account">Switch</button>
             <button id="disconnect-btn" class="btn btn-ghost btn-sm">Disconnect</button>
           </div>
         </div>
@@ -103,71 +107,91 @@
           <h2>Connect your wallet</h2>
           <p>Manage leverage positions on Blend Protocol pools on Stellar.</p>
           <button class="btn btn-primary btn-lg" onclick="document.getElementById('connect-btn').click()">Connect Wallet</button>
+          <button id="demo-btn" class="btn btn-ghost" style="margin-top: 12px">Try Demo (no wallet)</button>
         </div>
 
         <!-- Dashboard -->
         <div id="dashboard" class="hidden">
 
           <div id="pool-frozen-banner" class="pool-frozen-banner hidden">
-            ⚠ This pool is Admin Frozen following the February 2026 oracle exploit. No new positions can be opened.
+            &#9888; This pool is Admin Frozen following the February 2026 oracle exploit. No new positions can be opened.
           </div>
 
-          <!-- Stats row -->
-          <div class="stats-row">
-            <div class="stat-card">
-              <span class="stat-label">c_factor <span class="tooltip" title="Collateral factor — the fraction of your collateral that counts toward borrowing power. 95% means $100 of collateral lets you borrow up to $95.">?</span></span>
-              <span class="stat-value" id="stat-cfactor">—</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-label">Max leverage <span class="tooltip" title="Maximum leverage where Health Factor stays above the safe minimum. Derived from the collateral and liability factors.">?</span></span>
-              <span class="stat-value" id="stat-max-lev">—</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-label">Available <span class="tooltip" title="Tokens currently available to borrow from the pool.">?</span></span>
-              <span class="stat-value" id="stat-liquidity">—</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-label">Utilization <span class="tooltip" title="Pool utilization = total borrowed / total supplied.">?</span></span>
-              <span class="stat-value" id="stat-util">—</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-label">Oracle price</span>
-              <span class="stat-value" id="stat-price">—</span>
-            </div>
-          </div>
+          <!-- Portfolio summary -->
+          <div id="portfolio-summary" class="portfolio-summary hidden"></div>
 
-          <!-- APR breakdown -->
-          <div class="apr-grid">
-            <div class="apr-card">
-              <div class="apr-card-label">Supply</div>
-              <div class="apr-row">
-                <span class="apr-key">Interest APR</span>
-                <span class="apr-val" id="supply-interest-apr">—</span>
+          <!-- Collapsible pool stats -->
+          <div id="stats-collapsible" class="stats-collapsible">
+            <button id="stats-toggle" class="stats-toggle">
+              <span>Pool Statistics</span>
+              <span class="stats-toggle-icon">&#9662;</span>
+            </button>
+            <div id="stats-body" class="stats-body">
+              <!-- Stats row -->
+              <div class="stats-row">
+                <div class="stat-card">
+                  <span class="stat-label">c_factor <span class="tooltip" data-tip="Collateral factor — the fraction of your collateral that counts toward borrowing power. 95% means $100 of collateral lets you borrow up to $95.">?</span></span>
+                  <span class="stat-value" id="stat-cfactor">—</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Max leverage <span class="tooltip" data-tip="Maximum leverage where Health Factor stays above the safe minimum. Derived from the collateral and liability factors.">?</span></span>
+                  <span class="stat-value" id="stat-max-lev">—</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Available <span class="tooltip" data-tip="Tokens currently available to borrow from the pool.">?</span></span>
+                  <span class="stat-value" id="stat-liquidity">—</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Utilization <span class="tooltip" data-tip="Pool utilization = total borrowed / total supplied.">?</span></span>
+                  <span class="stat-value" id="stat-util">—</span>
+                  <div class="util-bar-wrap"><div class="util-bar" id="util-bar"></div></div>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Oracle price</span>
+                  <span class="stat-value" id="stat-price">—</span>
+                </div>
               </div>
-              <div class="apr-row">
-                <span class="apr-key">BLND emissions</span>
-                <span class="apr-val apr-blnd" id="supply-blnd-apr">—</span>
+
+              <!-- APR breakdown -->
+              <div class="apr-grid">
+                <div class="apr-card">
+                  <div class="apr-card-label">Supply</div>
+                  <div class="apr-row">
+                    <span class="apr-key">Interest APR</span>
+                    <span class="apr-val" id="supply-interest-apr">—</span>
+                  </div>
+                  <div class="apr-row">
+                    <span class="apr-key">BLND emissions</span>
+                    <span class="apr-val apr-blnd" id="supply-blnd-apr">—</span>
+                  </div>
+                  <div class="apr-row apr-net-row">
+                    <span class="apr-key">Net supply APR</span>
+                    <span class="apr-val" id="supply-net-apr">—</span>
+                  </div>
+                </div>
+                <div class="apr-card">
+                  <div class="apr-card-label">Borrow</div>
+                  <div class="apr-row">
+                    <span class="apr-key">Interest cost</span>
+                    <span class="apr-val" id="borrow-interest-apr">—</span>
+                  </div>
+                  <div class="apr-row">
+                    <span class="apr-key">BLND emissions</span>
+                    <span class="apr-val apr-blnd" id="borrow-blnd-apr">—</span>
+                  </div>
+                  <div class="apr-row apr-net-row">
+                    <span class="apr-key">Net borrow cost</span>
+                    <span class="apr-val" id="borrow-net-cost">—</span>
+                  </div>
+                </div>
               </div>
-              <div class="apr-row apr-net-row">
-                <span class="apr-key">Net supply APR</span>
-                <span class="apr-val" id="supply-net-apr">—</span>
-              </div>
-            </div>
-            <div class="apr-card">
-              <div class="apr-card-label">Borrow</div>
-              <div class="apr-row">
-                <span class="apr-key">Interest cost</span>
-                <span class="apr-val" id="borrow-interest-apr">—</span>
-              </div>
-              <div class="apr-row">
-                <span class="apr-key">BLND emissions</span>
-                <span class="apr-val apr-blnd" id="borrow-blnd-apr">—</span>
-              </div>
-              <div class="apr-row apr-net-row">
-                <span class="apr-key">Net borrow cost</span>
-                <span class="apr-val" id="borrow-net-cost">—</span>
-              </div>
-            </div>
+            </div><!-- stats-body -->
+          </div><!-- stats-collapsible -->
+
+          <!-- Mobile card tabs -->
+          <div class="mobile-card-tabs" id="mobile-card-tabs">
+            <button class="mobile-card-tab active" data-panel="position">Your Position</button>
+            <button class="mobile-card-tab" data-panel="action">Open / Adjust</button>
           </div>
 
           <div class="two-col">
@@ -176,7 +200,10 @@
             <section class="card">
               <div class="card-header">
                 <h2>Your Position</h2>
-                <button id="refresh-btn" class="btn btn-ghost btn-sm">↻</button>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span id="data-freshness" class="data-freshness"></span>
+                  <button id="refresh-btn" class="btn btn-ghost btn-sm">&#8635;</button>
+                </div>
               </div>
               <div class="pool-blnd-row">
                 <div class="blnd-info">
@@ -185,16 +212,17 @@
                   <span class="blnd-convert-hint mono" id="compound-estimate"></span>
                 </div>
                 <div class="blnd-actions">
-                  <button id="compound-btn" class="btn btn-secondary btn-sm" disabled title="Claim BLND and swap to position asset">Claim & Convert</button>
-                  <button id="resupply-btn" class="btn btn-secondary btn-sm" disabled title="Deposit wallet balance as extra collateral">Resupply</button>
+                  <button id="compound-btn" class="btn btn-secondary btn-sm" disabled data-tip="Claim BLND and swap to position asset">Claim &amp; Convert</button>
+                  <button id="resupply-btn" class="btn btn-secondary btn-sm" disabled data-tip="Deposit wallet balance as extra collateral">Resupply</button>
                   <button id="claim-btn" class="btn btn-ghost btn-sm" disabled>Claim only</button>
                 </div>
               </div>
               <div id="no-position" class="empty-state">
-                <div class="empty-icon">📭</div>
+                <div class="empty-icon">&#128237;</div>
                 <p>No active position for this asset.</p>
               </div>
               <div id="position-data" class="hidden">
+                <div id="hf-pos-warning" class="hf-pos-warning hidden"></div>
                 <div class="position-grid">
                   <div class="position-metric">
                     <span class="metric-label">Collateral</span>
@@ -213,24 +241,25 @@
                     <span class="metric-value mono" id="pos-leverage">—</span>
                   </div>
                   <div class="position-metric">
-                    <span class="metric-label">Asset HF <span class="tooltip" title="Health Factor for this asset only. HF = (collateral × c_factor) / (debt / l_factor). Below 1.0 = liquidatable.">?</span></span>
+                    <span class="metric-label">Asset HF <span class="tooltip" data-tip="Health Factor for this asset only. HF = (collateral x c_factor) / (debt / l_factor). Below 1.0 = liquidatable.">?</span></span>
                     <span class="metric-value" id="pos-hf">—</span>
-                    <div class="hf-bar-wrap"><div class="hf-bar" id="hf-bar"></div></div>
+                    <div class="hf-bar-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="hf-bar" id="hf-bar"></div></div>
+                    <div class="hf-gauge-container"></div>
                   </div>
                   <div class="position-metric">
-                    <span class="metric-label">Pool HF <span class="tooltip" title="Health Factor across ALL your positions in this pool, weighted by oracle price.">?</span></span>
+                    <span class="metric-label">Pool HF <span class="tooltip" data-tip="Health Factor across ALL your positions in this pool, weighted by oracle price.">?</span></span>
                     <span class="metric-value" id="pos-pool-hf">—</span>
                   </div>
                   <div class="position-metric">
-                    <span class="metric-label">Net APY <span class="tooltip" title="Annual return on your initial deposit (equity). Formula: supplyAPR × leverage − borrowAPR × (leverage − 1). Includes BLND emission value.">?</span></span>
+                    <span class="metric-label">Net APY <span class="tooltip" data-tip="Annual return on your initial deposit (equity). Formula: supplyAPR x leverage - borrowAPR x (leverage - 1). Includes BLND emission value.">?</span></span>
                     <span class="metric-value" id="pos-net-apr">—</span>
                   </div>
                   <div class="position-metric">
-                    <span class="metric-label">Borrow headroom <span class="tooltip" title="How much more USD you could borrow before Health Factor hits 1.0 (liquidation).">?</span></span>
+                    <span class="metric-label">Borrow headroom <span class="tooltip" data-tip="How much more USD you could borrow before Health Factor hits 1.0 (liquidation).">?</span></span>
                     <span class="metric-value mono" id="pos-headroom">—</span>
                   </div>
                   <div class="position-metric position-metric-full">
-                    <span class="metric-label">Days until liquidation <span class="tooltip" title="Estimated days before HF drops to 1.0, based on the interest rate spread only (borrow APR − supply APR). Formula: ln(HF) / (borrowAPR − supplyAPR) × 365.">?</span></span>
+                    <span class="metric-label">Days until liquidation <span class="tooltip" data-tip="Estimated days before HF drops to 1.0, based on the interest rate spread only (borrow APR - supply APR).">?</span></span>
                     <span class="metric-value" id="pos-liq-days">—</span>
                     <div class="liq-days-note" id="pos-liq-note"></div>
                   </div>
@@ -239,6 +268,10 @@
                   <button id="repay-btn" class="btn btn-secondary" disabled>Repay Debt</button>
                   <button id="close-btn" class="btn btn-danger" disabled>Close Position</button>
                 </div>
+                <details class="tx-history" id="tx-history" style="display:none">
+                  <summary class="tx-history-toggle">Recent Transactions</summary>
+                  <div id="tx-history-list" class="tx-history-list"></div>
+                </details>
               </div>
             </section>
 
@@ -266,12 +299,19 @@
               </div>
 
               <div class="form-group">
-                <label id="leverage-label">Leverage <span class="tooltip" title="Multiplier on your deposit. Higher leverage amplifies both yield and liquidation risk.">?</span></label>
+                <label id="leverage-label">Leverage <span class="tooltip" data-tip="Multiplier on your deposit. Higher leverage amplifies both yield and liquidation risk.">?</span></label>
                 <div class="slider-row">
                   <input type="range" id="leverage-slider" min="1.1" max="12.9" step="0.1" value="2.0" class="slider" />
                   <input type="number" id="leverage-input" class="input mono leverage-num-input" min="1.1" max="12.9" step="0.1" value="2.0" />
-                  <span class="slider-value-x mono">×</span>
+                  <span class="slider-value-x mono">&times;</span>
                 </div>
+                <div class="slider-zones" id="slider-zones">
+                  <span class="slider-zone zone-conservative" data-zone="conservative">Conservative</span>
+                  <span class="slider-zone zone-moderate" data-zone="moderate">Moderate</span>
+                  <span class="slider-zone zone-aggressive" data-zone="aggressive">Aggressive</span>
+                  <span class="slider-zone zone-degen" data-zone="degen">Degen</span>
+                </div>
+                <div id="apy-chart" class="apy-chart"></div>
                 <div class="leverage-preview">
                   <div class="preview-row">
                     <span>Leverage</span><strong id="prev-lev">—</strong>
@@ -292,16 +332,19 @@
                     <span>Days to liquidation</span><strong id="prev-liq-days">—</strong>
                   </div>
                 </div>
-                <p class="hf-warning hidden" id="hf-warning">⚠ HF too low — liquidation risk. Reduce leverage.</p>
+                <p class="hf-warning hidden" id="hf-warning">&#9888; HF too low — liquidation risk. Reduce leverage.</p>
                 <p class="hf-warning hidden" id="liquidity-warning"></p>
               </div>
               <button id="open-btn" class="btn btn-primary btn-lg">Open Position</button>
               <button id="adjust-btn" class="btn btn-primary btn-lg hidden">Adjust Leverage</button>
               <p class="disclaimer" id="open-disclaimer">Two transactions: (1) token approve, (2) <code>submit_with_allowance</code>.</p>
-              <p class="disclaimer hidden" id="adjust-disclaimer">Adjusts leverage by borrowing more (increase) or withdrawing & repaying (decrease).</p>
+              <p class="disclaimer hidden" id="adjust-disclaimer">Adjusts leverage by borrowing more (increase) or withdrawing &amp; repaying (decrease).</p>
             </section>
 
           </div><!-- .two-col -->
+
+          <footer id="pool-footer" class="pool-footer"></footer>
+
         </div><!-- #dashboard -->
 
         <!-- Swap view -->
@@ -322,7 +365,7 @@
             </div>
 
             <div class="swap-arrow-row">
-              <button id="swap-reverse" class="swap-arrow-btn" title="Reverse pair">&#8645;</button>
+              <button id="swap-reverse" class="swap-arrow-btn" data-tip="Reverse pair">&#8645;</button>
             </div>
 
             <div class="form-group">
@@ -343,8 +386,18 @@
               <div class="preview-row">
                 <span>Broker advantage</span><strong id="swap-profit" class="mono">—</strong>
               </div>
-              <div class="preview-row">
-                <span>Slippage tolerance</span><strong class="mono">2%</strong>
+              <div class="preview-row slippage-row">
+                <span>Slippage tolerance</span>
+                <div class="slippage-selector">
+                  <button class="slippage-opt" data-slip="0.005">0.5%</button>
+                  <button class="slippage-opt" data-slip="0.01">1%</button>
+                  <button class="slippage-opt active" data-slip="0.02">2%</button>
+                  <button class="slippage-opt" data-slip="0.05">5%</button>
+                  <div class="slippage-custom">
+                    <input type="number" id="slippage-custom-input" class="input mono" placeholder="Custom" min="0.1" max="50" step="0.1" />
+                    <span class="slippage-pct">%</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -353,16 +406,18 @@
           </section>
         </div>
 
-        <!-- Toast -->
-        <div id="toast" class="toast hidden">
-          <span id="toast-icon"></span>
-          <span id="toast-msg"></span>
-          <a id="toast-link" class="toast-link hidden" target="_blank" rel="noopener">View →</a>
-        </div>
+        <!-- TX Stepper -->
+        <div id="tx-stepper" class="tx-stepper hidden" role="status"></div>
+
+        <!-- Toast stack -->
+        <div id="toast-stack" class="toast-stack"></div>
 
       </main>
     </div><!-- .main-wrap -->
   </div>
+
+  <!-- Tooltip popover -->
+  <div id="tooltip-popover" class="tooltip-popover" role="tooltip"></div>
 
   <script type="module" src="/src/main.ts"></script>
 </body>
