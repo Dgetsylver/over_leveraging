@@ -597,6 +597,7 @@
                 <label>Deposit <span id="vault-asset-label">USDC</span></label>
                 <div class="input-wrap">
                   <input type="number" id="vault-deposit-input" class="input mono" placeholder="100" min="0" step="any" />
+                  <button type="button" id="vault-deposit-max" class="btn btn-ghost input-max-btn">Max</button>
                   <span class="input-suffix" id="vault-deposit-suffix">USDC</span>
                 </div>
                 <span class="balance-hint">Wallet: <span id="vault-wallet-balance">--</span></span>
@@ -607,8 +608,10 @@
                 <label>Withdraw <span id="vault-withdraw-label">USDC</span></label>
                 <div class="input-wrap">
                   <input type="number" id="vault-withdraw-input" class="input mono" placeholder="50" min="0" step="any" />
+                  <button type="button" id="vault-withdraw-max" class="btn btn-ghost input-max-btn">Max</button>
                   <span class="input-suffix" id="vault-withdraw-suffix">USDC</span>
                 </div>
+                <span class="balance-hint">In vault: <span id="vault-withdraw-balance">--</span></span>
               </div>
               <button id="vault-withdraw-btn" class="btn btn-secondary btn-lg" disabled>Withdraw</button>
             </div>

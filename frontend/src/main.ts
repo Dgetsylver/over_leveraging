@@ -2259,6 +2259,7 @@ function getActiveVault(): VaultConfig {
 }
 
 let _lastVaultStats: VaultStats | null = null;
+let _userVaultBalance: number = 0;
 
 async function refreshVaultView() {
   const vault = getActiveVault();
@@ -2382,6 +2383,7 @@ async function refreshVaultView() {
 
   // Fetch user position if connected
   if (connected && userAddress) {
+    // Wallet token balance
     try {
       const bal = await fetchAssetBalance(userAddress, vault.assetId);
       const balHuman = bal / 10 ** vault.decimals;
@@ -2390,14 +2392,18 @@ async function refreshVaultView() {
       if (balHuman === 0 && getActiveNetwork() === "testnet") {
         $("vault-wallet-balance").textContent += " (use Fund Wallet above)";
       }
-    } catch {
-      $("vault-wallet-balance").textContent = "0.00 " + vault.assetSymbol + " (use Fund Wallet above)";
+    } catch (err) {
+      console.warn("Vault wallet balance fetch failed:", err);
+      $("vault-wallet-balance").textContent = "-- " + vault.assetSymbol;
     }
 
+    // Vault position (equity deposited in strategy)
     const pos = await fetchUserVaultBalance(vault, userAddress);
     if (pos && pos.underlyingValue > 0) {
+      _userVaultBalance = pos.underlyingValue;
       $("vault-user-pos").classList.remove("hidden");
       $("vault-user-value").textContent = formatUsd(pos.underlyingValue);
+      $("vault-withdraw-balance").textContent = pos.underlyingValue.toFixed(4) + " " + vault.assetSymbol;
       // Share of vault
       if (stats && stats.totalEquity > 0) {
         const pct = (pos.underlyingValue / stats.totalEquity) * 100;
@@ -2406,10 +2412,31 @@ async function refreshVaultView() {
         $("vault-user-share-pct").textContent = "--";
       }
     } else {
+      _userVaultBalance = 0;
       $("vault-user-pos").classList.add("hidden");
     }
   }
 }
+
+// Vault deposit max
+$("vault-deposit-max").addEventListener("click", async () => {
+  const vault = getActiveVault();
+  if (!userAddress) return;
+  try {
+    const bal = await fetchAssetBalance(userAddress, vault.assetId);
+    const balHuman = bal / 10 ** vault.decimals;
+    ($("vault-deposit-input") as HTMLInputElement).value = balHuman > 0 ? balHuman.toFixed(2) : "";
+  } catch { /* ignore */ }
+});
+
+// Vault withdraw max — use vault balance with small buffer for rounding
+$("vault-withdraw-max").addEventListener("click", () => {
+  if (_userVaultBalance > 0) {
+    // Subtract tiny buffer (0.001) to avoid InsufficientBalance from rounding
+    const safe = Math.max(_userVaultBalance - 0.001, 0);
+    ($("vault-withdraw-input") as HTMLInputElement).value = safe > 0 ? safe.toFixed(4) : "";
+  }
+});
 
 // Vault deposit
 $("vault-deposit-btn").addEventListener("click", async () => {
@@ -2439,8 +2466,13 @@ $("vault-deposit-btn").addEventListener("click", async () => {
 $("vault-withdraw-btn").addEventListener("click", async () => {
   const vault = getActiveVault();
   if (!userAddress || !vault.vaultId) return;
-  const amount = parseFloat(($("vault-withdraw-input") as HTMLInputElement).value);
+  let amount = parseFloat(($("vault-withdraw-input") as HTMLInputElement).value);
   if (!amount || amount <= 0) return;
+
+  // Cap at vault balance to prevent InsufficientBalance errors from rounding
+  if (_userVaultBalance > 0 && amount >= _userVaultBalance) {
+    amount = Math.max(_userVaultBalance - 0.001, 0.001);
+  }
 
   try {
     ($("vault-withdraw-btn") as HTMLButtonElement).disabled = true;
