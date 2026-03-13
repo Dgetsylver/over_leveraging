@@ -736,14 +736,16 @@ export async function buildCloseSubmitXdr(
   userAddress: string,
   pos: AssetPosition,
 ): Promise<string> {
-  const withdrawAmount = pos.bTokens * pos.bRate / RATE_DEC;
+  // Use i64::MAX for both amounts — Blend caps REPAY at actual d-tokens
+  // and WITHDRAW at actual b-tokens. Passing exact computed amounts is
+  // fragile because rates tick between fetch and execution, causing the
+  // amount to overshoot and trigger #1219 (InvalidDTokenBurnAmount).
+  const MAX_AMOUNT = 9_223_372_036_854_775_807n; // i64::MAX
   const reqItems: xdr.ScVal[] = [];
-  // Only include REPAY if there's actual debt — repaying 0 triggers #1219
   if (pos.dTokens > 0n) {
-    const repayAmount = pos.dTokens * pos.dRate / RATE_DEC;
-    reqItems.push(buildRequest(pos.asset.id, repayAmount, REPAY));
+    reqItems.push(buildRequest(pos.asset.id, MAX_AMOUNT, REPAY));
   }
-  reqItems.push(buildRequest(pos.asset.id, withdrawAmount, WITHDRAW_COLLATERAL));
+  reqItems.push(buildRequest(pos.asset.id, MAX_AMOUNT, WITHDRAW_COLLATERAL));
   const requests = buildRequestsVec(reqItems);
 
   const poolContract = new Contract(pool.id);
@@ -774,12 +776,13 @@ export async function buildRepayXdr(
   userAddress: string,
   pos: AssetPosition,
 ): Promise<string> {
-  // Exact debt amount — no buffer on REPAY to avoid #1219 (InvalidDTokenBurnAmount).
-  // WITHDRAW uses same amount; Blend caps at actual b-tokens if slightly over.
-  const debtAmount = pos.dTokens * pos.dRate / RATE_DEC;
+  // Use i64::MAX for REPAY — Blend caps at actual d-tokens, avoiding #1219.
+  // WITHDRAW uses d-token-derived amount +1 to cover any rounding.
+  const MAX_REPAY = 9_223_372_036_854_775_807n;
+  const debtAmount = pos.dTokens * pos.dRate / RATE_DEC + 1n;
   const requests   = buildRequestsVec([
     buildRequest(pos.asset.id, debtAmount, WITHDRAW_COLLATERAL),
-    buildRequest(pos.asset.id, debtAmount, REPAY),
+    buildRequest(pos.asset.id, MAX_REPAY,  REPAY),
   ]);
 
   const poolContract = new Contract(pool.id);
