@@ -519,8 +519,14 @@ main { flex: 1; max-width: 1060px; width: 100%; margin: 0 auto; padding: 24px 28
 .expert-toggle:hover { color: var(--warning) !important; border-color: var(--expert-border) !important; background: var(--expert-hover-bg) !important; }
 .expert-toggle.expert-active { color: var(--warning) !important; border-color: var(--expert-active-border) !important; background: var(--expert-active-bg) !important; }
 
-/* Network toggle */
-.network-toggle.testnet-active { color: var(--warning) !important; border-color: var(--expert-border) !important; background: var(--expert-hover-bg) !important; }
+/* Network toggle (in header, next to wallet) */
+.network-toggle {
+  font-size: 12px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase;
+  padding: 5px 12px; border-radius: var(--r-xs); border: 1px solid var(--border);
+  background: transparent; color: var(--text-3); cursor: pointer; transition: all .2s;
+}
+.network-toggle:hover { color: var(--text-2); border-color: var(--border-h); }
+.network-toggle.testnet-active { color: var(--warning) !important; border-color: rgba(245,158,11,.4) !important; background: rgba(245,158,11,.08) !important; }
 
 /* Testnet banner */
 .testnet-banner {
