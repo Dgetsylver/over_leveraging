@@ -516,9 +516,7 @@ function renderSelectedAsset() {
   renderAprLine("borrow-blnd-apr",     rs.blndBorrowApr,     false, true);
   renderAprLine("borrow-net-cost",     rs.netBorrowCost,     true);
 
-  // Auto-collapse stats when position exists (#23)
-  const hasPosition = positions.byAsset.has(selectedAsset.id);
-  $("stats-collapsible").classList.toggle("collapsed", hasPosition);
+  // Don't auto-collapse — user controls visibility via the toggle
 
   updatePreview();
   renderPosition();
