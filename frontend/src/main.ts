@@ -1119,9 +1119,10 @@ function updatePreview() {
 
   // Risk zone labels (#9)
   const maxSlider = parseFloat(($("leverage-slider") as HTMLInputElement).max) || 10;
+  const atMax = Math.abs(lev - maxSlider) < 0.15;
   const zones = document.querySelectorAll<HTMLElement>(".slider-zone");
   const maxiDegenEl = $("zone-maxi-degen");
-  if (expertMode && maxSlider > 15) {
+  if (expertMode) {
     maxiDegenEl?.classList.remove("hidden");
   } else {
     maxiDegenEl?.classList.add("hidden");
@@ -1129,11 +1130,13 @@ function updatePreview() {
   zones.forEach(z => {
     const zone = z.dataset.zone;
     const active =
-      (zone === "conservative" && lev >= 1.1 && lev < 3) ||
-      (zone === "moderate" && lev >= 3 && lev < 6) ||
-      (zone === "aggressive" && lev >= 6 && lev < 12) ||
-      (zone === "degen" && lev >= 12 && lev < 20) ||
-      (zone === "maxi-degen" && lev >= 20);
+      (zone === "maxi-degen" && expertMode && atMax) ||
+      (!( expertMode && atMax) && (
+        (zone === "conservative" && lev >= 1.1 && lev < 3) ||
+        (zone === "moderate" && lev >= 3 && lev < 6) ||
+        (zone === "aggressive" && lev >= 6 && lev < 9) ||
+        (zone === "degen" && lev >= 9)
+      ));
     z.classList.toggle("active", !!active);
   });
 
