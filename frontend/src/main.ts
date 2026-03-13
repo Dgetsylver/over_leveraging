@@ -2260,6 +2260,7 @@ function getActiveVault(): VaultConfig {
 
 let _lastVaultStats: VaultStats | null = null;
 let _userVaultBalance: number = 0;
+let _userWalletBalance: number = 0;
 
 async function refreshVaultView() {
   const vault = getActiveVault();
@@ -2383,17 +2384,18 @@ async function refreshVaultView() {
 
   // Fetch user position if connected
   if (connected && userAddress) {
-    // Wallet token balance
+    // Wallet token balance (fetchAssetBalance already returns human-readable)
     try {
       const bal = await fetchAssetBalance(userAddress, vault.assetId);
-      const balHuman = bal / 10 ** vault.decimals;
+      _userWalletBalance = bal;
       $("vault-wallet-balance").textContent =
-        balHuman.toFixed(2) + " " + vault.assetSymbol;
-      if (balHuman === 0 && getActiveNetwork() === "testnet") {
+        bal.toFixed(2) + " " + vault.assetSymbol;
+      if (bal === 0 && getActiveNetwork() === "testnet") {
         $("vault-wallet-balance").textContent += " (use Fund Wallet above)";
       }
     } catch (err) {
       console.warn("Vault wallet balance fetch failed:", err);
+      _userWalletBalance = 0;
       $("vault-wallet-balance").textContent = "-- " + vault.assetSymbol;
     }
 
@@ -2418,15 +2420,11 @@ async function refreshVaultView() {
   }
 }
 
-// Vault deposit max
-$("vault-deposit-max").addEventListener("click", async () => {
-  const vault = getActiveVault();
-  if (!userAddress) return;
-  try {
-    const bal = await fetchAssetBalance(userAddress, vault.assetId);
-    const balHuman = bal / 10 ** vault.decimals;
-    ($("vault-deposit-input") as HTMLInputElement).value = balHuman > 0 ? balHuman.toFixed(2) : "";
-  } catch { /* ignore */ }
+// Vault deposit max — use cached wallet balance
+$("vault-deposit-max").addEventListener("click", () => {
+  if (_userWalletBalance > 0) {
+    ($("vault-deposit-input") as HTMLInputElement).value = _userWalletBalance.toFixed(2);
+  }
 });
 
 // Vault withdraw max — use vault balance with small buffer for rounding
