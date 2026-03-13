@@ -179,9 +179,15 @@
                 <button id="refresh-btn" class="btn btn-ghost btn-sm">↻</button>
               </div>
               <div class="pool-blnd-row">
-                <span class="metric-label">Pending BLND (pool)</span>
-                <span class="metric-value mono" id="pos-blnd">—</span>
-                <button id="claim-btn" class="btn btn-secondary btn-sm" disabled>Claim all BLND</button>
+                <div class="blnd-info">
+                  <span class="metric-label">Pending BLND</span>
+                  <span class="metric-value mono" id="pos-blnd">—</span>
+                  <span class="blnd-convert-hint mono" id="compound-estimate"></span>
+                </div>
+                <div class="blnd-actions">
+                  <button id="compound-btn" class="btn btn-secondary btn-sm" disabled title="Claim BLND and swap to position asset">Claim & Convert</button>
+                  <button id="claim-btn" class="btn btn-ghost btn-sm" disabled>Claim only</button>
+                </div>
               </div>
               <div id="no-position" class="empty-state">
                 <div class="empty-icon">📭</div>
@@ -227,13 +233,6 @@
                     <span class="metric-value" id="pos-liq-days">—</span>
                     <div class="liq-days-note" id="pos-liq-note"></div>
                   </div>
-                </div>
-                <div class="compound-row hidden" id="compound-row">
-                  <div class="compound-info">
-                    <span class="compound-label">Claim & Convert BLND</span>
-                    <span class="compound-estimate mono" id="compound-estimate">—</span>
-                  </div>
-                  <button id="compound-btn" class="btn btn-secondary btn-sm" disabled>Claim & Convert</button>
                 </div>
                 <div class="position-actions">
                   <button id="repay-btn" class="btn btn-secondary" disabled>Repay Debt</button>

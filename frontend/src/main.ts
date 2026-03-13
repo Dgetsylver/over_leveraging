@@ -395,7 +395,6 @@ function renderPosition() {
 }
 
 async function updateCompoundEstimate() {
-  const compoundRow = $("compound-row");
   const compoundBtn = $("compound-btn") as HTMLButtonElement;
   const estimateEl  = $("compound-estimate");
 
@@ -405,25 +404,25 @@ async function updateCompoundEstimate() {
   const pendingBlnd = blndMatch ? parseFloat(blndMatch[1]) : 0;
 
   if (pendingBlnd <= 0 || !positions.byAsset.has(selectedAsset.id)) {
-    compoundRow.classList.add("hidden");
+    estimateEl.textContent = "";
+    compoundBtn.disabled = true;
     return;
   }
 
-  compoundRow.classList.remove("hidden");
-  estimateEl.textContent = `~${fmt(pendingBlnd, 2)} BLND → estimating…`;
+  estimateEl.textContent = "→ estimating…";
   compoundBtn.disabled = true;
 
   try {
     const est = await estimateBlndSwap(pendingBlnd, selectedAsset.id);
     if (est) {
-      estimateEl.textContent = `~${fmt(pendingBlnd, 2)} BLND → ~${fmt(est.estimate, 4)} ${selectedAsset.symbol}`;
+      estimateEl.textContent = `→ ~${fmt(est.estimate, 4)} ${selectedAsset.symbol}`;
       compoundBtn.disabled = false;
     } else {
-      estimateEl.textContent = `~${fmt(pendingBlnd, 2)} BLND (no swap path found)`;
+      estimateEl.textContent = "(no swap path)";
       compoundBtn.disabled = true;
     }
   } catch {
-    estimateEl.textContent = `~${fmt(pendingBlnd, 2)} BLND (estimate unavailable)`;
+    estimateEl.textContent = "";
     compoundBtn.disabled = true;
   }
 }
