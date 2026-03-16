@@ -925,6 +925,37 @@ export async function buildRepayXdr(
 }
 
 /**
+ * Build a standalone WITHDRAW_COLLATERAL transaction (no debt repay).
+ * Used after deleveraging to pull remaining equity out of the pool.
+ * Uses i64::MAX — Blend caps at actual b-tokens.
+ */
+export async function buildWithdrawXdr(
+  pool: PoolDef,
+  userAddress: string,
+  assetId: string,
+): Promise<string> {
+  const MAX_AMOUNT = 9_223_372_036_854_775_807n;
+  const requests = buildRequestsVec([
+    buildRequest(assetId, MAX_AMOUNT, WITHDRAW_COLLATERAL),
+  ]);
+
+  const poolContract = new Contract(pool.id);
+  const addrScVal    = new Address(userAddress).toScVal();
+  const acc          = await server.getAccount(userAddress);
+  const tx           = new TransactionBuilder(acc, {
+    fee: (BigInt(BASE_FEE) * 10n).toString(),
+    networkPassphrase: _cfg.passphrase,
+  })
+    .addOperation(poolContract.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests))
+    .setTimeout(60).build();
+
+  const sim = await server.simulateTransaction(tx);
+  if (!SorobanRpc.Api.isSimulationSuccess(sim))
+    throw new Error(`Withdraw simulation failed: ${(sim as SorobanRpc.Api.SimulateTransactionErrorResponse).error}`);
+  return SorobanRpc.assembleTransaction(tx, sim).build().toXDR();
+}
+
+/**
  * Returns total pending BLND (in full BLND, 7 decimals) across ALL user
  * positions in the pool by simulating the claim call. This gives the exact
  * on-chain amount — no manual index math needed.
