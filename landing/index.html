@@ -20,14 +20,18 @@
         <svg class="nav-logo" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="b" x1="20" y1="6" x2="40" y2="58" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stop-color="#00e599"/>
-              <stop offset="100%" stop-color="#00c2bb"/>
+              <stop offset="0%" stop-color="#5EEDB8"/>
+              <stop offset="100%" stop-color="#2DE8A3"/>
             </linearGradient>
           </defs>
-          <circle cx="32" cy="32" r="30" fill="#0a0e17" stroke="#00e599" stroke-width="2" opacity="0.5"/>
+          <circle cx="32" cy="32" r="30" fill="#0B0E14" stroke="#2DE8A3" stroke-width="2" opacity="0.4"/>
           <polygon points="38,8 22,34 31,34 27,56 43,28 34,28" fill="url(#b)"/>
         </svg>
         <span class="nav-name">Turbo<span class="accent">long</span></span>
+      </div>
+      <div class="nav-links">
+        <a href="#how" class="nav-link">How It Works</a>
+        <a href="#features" class="nav-link">Features</a>
       </div>
       <a href="https://app.turbolong.com" class="btn btn-primary">Launch App</a>
     </nav>
@@ -35,34 +39,97 @@
     <!-- Hero -->
     <section class="hero">
       <div class="hero-glow"></div>
-      <h1>Leveraged DeFi positions<br/>on <span class="accent">Stellar</span></h1>
-      <p class="hero-sub">Open leveraged long positions on Blend Protocol pools. Multi-protocol support, automated vaults, and best-route swaps — all in one interface.</p>
+      <h1>Leverage trading on Stellar. Simplified.</h1>
+      <p class="hero-sub">Open leveraged long positions on Blend Protocol pools with a single click. No perps, no funding rates &mdash; just recursive lending loops.</p>
       <div class="hero-cta">
         <a href="https://app.turbolong.com" class="btn btn-primary btn-lg">Launch App</a>
+        <a href="https://app.turbolong.com#demo" class="btn btn-ghost btn-lg">View Demo</a>
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <section class="stats-strip">
+      <div class="stat">
+        <span class="stat-value">3</span>
+        <span class="stat-label">Pools</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">8+</span>
+        <span class="stat-label">Assets</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">12.9&times;</span>
+        <span class="stat-label">Max Leverage</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">&lt;5s</span>
+        <span class="stat-label">Finality</span>
+      </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="how-section" id="how">
+      <h2>How It Works</h2>
+      <div class="how-steps">
+        <div class="how-step">
+          <div class="how-step-num">1</div>
+          <h3>Connect Wallet</h3>
+          <p>Use Freighter, Lobstr, xBull, or any Stellar wallet to connect in seconds.</p>
+        </div>
+        <div class="how-step">
+          <div class="how-step-num">2</div>
+          <h3>Choose Asset &amp; Leverage</h3>
+          <p>Select a Blend pool and asset, then set your leverage multiplier with a slider.</p>
+        </div>
+        <div class="how-step">
+          <div class="how-step-num">3</div>
+          <h3>One-Click Position</h3>
+          <p>Turbolong executes the recursive lending loop atomically. Approve and submit.</p>
+        </div>
       </div>
     </section>
 
     <!-- Features -->
-    <section class="features">
-      <div class="feature">
-        <div class="feature-icon">&#9889;</div>
-        <h3>Leverage Loops</h3>
-        <p>Open up to 12x leveraged positions on any Blend Protocol pool. Atomic multi-step transactions handle the looping for you.</p>
+    <section class="features-section" id="features">
+      <h2>Features</h2>
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">&#9889;</div>
+          <h3>Atomic Leverage Loops</h3>
+          <p>Recursive supply/borrow in a single transaction. No partial execution risk.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">&#128202;</div>
+          <h3>Real-Time Health Monitoring</h3>
+          <p>Health factor, liquidation countdown, and borrow headroom updated live from on-chain data.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">&#128176;</div>
+          <h3>BLND Rewards</h3>
+          <p>Claim and auto-convert BLND emissions to compound your position.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">&#127974;</div>
+          <h3>Vault Strategy</h3>
+          <p>Set-and-forget leveraged USDC vault with permissionless rebalancing via DeFindex.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">&#127760;</div>
+          <h3>Multi-Pool Support</h3>
+          <p>Trade across Etherfuse, Fixed, and YieldBlox pools on Blend Protocol.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">&#8644;</div>
+          <h3>Built on Stellar</h3>
+          <p>Fast finality, low fees, and battle-tested Soroban smart contracts.</p>
+        </div>
       </div>
-      <div class="feature">
-        <div class="feature-icon">&#127974;</div>
-        <h3>Automated Vault</h3>
-        <p>Deposit USDC into the leveraged vault powered by DeFindex. The strategy manages position health and compounds returns automatically.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">&#8644;</div>
-        <h3>Smart Swap</h3>
-        <p>Swap any Stellar asset through best-route aggregation via Stellar Broker. Better rates than a single DEX.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">&#128202;</div>
-        <h3>Real-time Dashboard</h3>
-        <p>Track your positions, health factors, net APY, and liquidation risk — all updated live from on-chain data.</p>
+    </section>
+
+    <!-- Risk Disclosure -->
+    <section class="risk-section">
+      <div class="risk-banner">
+        <strong>Risk Disclosure:</strong> Leveraged positions can be liquidated if your Health Factor drops below 1.0. You may lose your entire deposit. This is experimental software &mdash; use at your own risk.
       </div>
     </section>
 
@@ -75,6 +142,11 @@
 
     <!-- Footer -->
     <footer class="footer">
+      <div class="footer-links">
+        <a href="https://docs.blend.capital/" target="_blank" rel="noopener">Blend Docs</a>
+        <a href="https://github.com/blend-capital" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://stellar.expert" target="_blank" rel="noopener">Stellar Expert</a>
+      </div>
       <p class="footer-disclaimer">Turbolong is an experimental DeFi tool. Leveraged positions carry significant financial risk, including the complete loss of deposited funds. Use at your own risk. Not available in jurisdictions where cryptocurrency is prohibited.</p>
       <p class="footer-copy">&copy; 2026 Turbolong</p>
     </footer>
