@@ -1,20 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#0a0e17"/>
-      <stop offset="100%" stop-color="#060810"/>
+      <stop offset="0%" stop-color="#0B0E14"/>
+      <stop offset="100%" stop-color="#080A10"/>
     </linearGradient>
     <linearGradient id="bolt" x1="200" y1="80" x2="320" y2="440" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#00e599"/>
-      <stop offset="50%" stop-color="#00d4aa"/>
-      <stop offset="100%" stop-color="#00c2bb"/>
-    </linearGradient>
-    <linearGradient id="ring" x1="40" y1="40" x2="472" y2="472" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#00e599"/>
-      <stop offset="100%" stop-color="#00c2bb"/>
+      <stop offset="0%" stop-color="#5EEDB8"/>
+      <stop offset="50%" stop-color="#2DE8A3"/>
+      <stop offset="100%" stop-color="#20D99A"/>
     </linearGradient>
     <filter id="glow">
-      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feGaussianBlur stdDeviation="8" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
@@ -23,24 +19,11 @@
   </defs>
 
   <!-- Background circle -->
-  <circle cx="256" cy="256" r="248" fill="url(#bg)" stroke="url(#ring)" stroke-width="4" opacity="0.4"/>
+  <circle cx="256" cy="256" r="248" fill="url(#bg)" stroke="#2DE8A3" stroke-width="3" opacity="0.3"/>
 
-  <!-- Outer ring -->
-  <circle cx="256" cy="256" r="220" fill="none" stroke="url(#ring)" stroke-width="3" opacity="0.2"/>
-
-  <!-- Lightning bolt (turbo/leverage up) -->
+  <!-- Lightning bolt -->
   <g filter="url(#glow)">
     <polygon points="290,80 180,280 250,280 222,432 332,220 260,220"
       fill="url(#bolt)" opacity="0.95"/>
-  </g>
-
-  <!-- Speed lines -->
-  <g opacity="0.3" stroke="#00e599" stroke-width="3" stroke-linecap="round">
-    <line x1="100" y1="180" x2="160" y2="200"/>
-    <line x1="90" y1="240" x2="155" y2="248"/>
-    <line x1="100" y1="300" x2="160" y2="292"/>
-    <line x1="352" y1="200" x2="412" y2="180"/>
-    <line x1="357" y1="248" x2="422" y2="240"/>
-    <line x1="352" y1="292" x2="412" y2="300"/>
   </g>
 </svg>

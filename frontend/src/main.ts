@@ -33,6 +33,7 @@ import {
   buildOpenPositionXdr,
   buildCloseSubmitXdr,
   buildRepayXdr,
+  buildWithdrawXdr,
   buildClaimXdr,
   buildIncreaseLeverageXdr,
   buildDecreaseLeverageXdr,
@@ -152,6 +153,7 @@ async function switchNetwork(net: NetworkMode) {
   $("connect-prompt").classList.remove("hidden");
   $("dashboard").classList.add("hidden");
   $("overview-view").classList.add("hidden");
+  $("asset-tabs-bar").style.display = "none";
   switchView("leverage");
   buildPoolTabs();
   buildAssetTabs();
@@ -275,8 +277,15 @@ function getSystemTheme(): Theme {
 
 function applyTheme(theme: Theme) {
   document.documentElement.setAttribute("data-theme", theme);
+  // Update theme badge in settings dropdown
   const btn = document.getElementById("theme-toggle");
-  if (btn) btn.innerHTML = theme === "dark" ? "&#9790;" : "&#9728;";
+  if (btn) {
+    const badge = btn.querySelector(".settings-badge");
+    if (badge) badge.innerHTML = theme === "dark" ? "&#9790;" : "&#9728;";
+  }
+  // Also update mobile theme toggle
+  const mobileBtn = document.getElementById("mobile-theme-toggle");
+  if (mobileBtn) mobileBtn.innerHTML = theme === "dark" ? "&#9790;" : "&#9728;";
 }
 
 // Initialize: check localStorage override, else follow system
@@ -362,7 +371,7 @@ function startFreshnessTimer() {
 
 // ── Animated number transitions (#11) ────────────────────────────────────────
 
-function animateNumber(el: HTMLElement, to: number, duration = 400, formatFn: (n: number) => string = (n) => fmt(n, 2)) {
+function animateNumber(el: HTMLElement, to: number, duration = 200, formatFn: (n: number) => string = (n) => fmt(n, 2)) {
   const fromText = el.textContent?.replace(/[^\d.\-]/g, "") ?? "0";
   const from = parseFloat(fromText) || 0;
   if (Math.abs(from - to) < 0.001) { el.textContent = formatFn(to); return; }
@@ -511,6 +520,7 @@ async function signAndSubmit(xdrStr: string, label: string, stepIndex?: number):
 // ── Pool tabs ─────────────────────────────────────────────────────────────────
 
 function buildPoolTabs() {
+  // Mobile sidebar pool tabs
   const container = $("pool-tabs");
   container.innerHTML = "";
   getKnownPools().forEach(pool => {
@@ -524,6 +534,28 @@ function buildPoolTabs() {
     btn.addEventListener("click", () => selectPool(pool));
     container.appendChild(btn);
   });
+
+  // Desktop pool dropdown
+  const dropdown = $("pool-dropdown");
+  dropdown.innerHTML = "";
+  getKnownPools().forEach(pool => {
+    const btn = document.createElement("button");
+    const isFrozen = pool.status !== 1;
+    btn.className = `pool-dropdown-item ${pool.id === selectedPool.id ? "active" : ""} ${isFrozen ? "pool-tab-frozen" : ""}`;
+    btn.dataset["poolId"] = pool.id;
+    btn.textContent = pool.name;
+    if (isFrozen) btn.setAttribute("data-tip", "Admin Frozen \u2014 exploited Feb 2026");
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectPool(pool);
+      dropdown.classList.add("hidden");
+    });
+    dropdown.appendChild(btn);
+  });
+
+  // Update Trade button text to show current pool
+  const tradeBtn = $("proto-blend");
+  tradeBtn.innerHTML = `${selectedPool.name} <span class="nav-caret">&#9662;</span>`;
 }
 
 function selectPool(pool: PoolDef) {
@@ -532,6 +564,13 @@ function selectPool(pool: PoolDef) {
   document.querySelectorAll<HTMLButtonElement>(".pool-tab").forEach(btn => {
     btn.classList.toggle("active", btn.dataset["poolId"] === pool.id);
   });
+  document.querySelectorAll<HTMLButtonElement>(".pool-dropdown-item").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset["poolId"] === pool.id);
+  });
+
+  // Update Trade button text
+  const tradeBtn = $("proto-blend");
+  tradeBtn.innerHTML = `${pool.name} <span class="nav-caret">&#9662;</span>`;
 
   const banner = $("pool-frozen-banner");
   if (pool.status !== 1) {
@@ -656,7 +695,7 @@ function renderApyChart(rs: ReserveStats | undefined, currentLev: number) {
   const container = $("apy-chart");
   if (!rs) { container.innerHTML = ""; return; }
   const maxLev = parseFloat(($("leverage-slider") as HTMLInputElement).max);
-  const W = 300, H = 80, padL = 34, padR = 10, padT = 14, padB = 15;
+  const W = 300, H = 120, padL = 34, padR = 10, padT = 14, padB = 15;
   const steps: { lev: number; apy: number }[] = [];
   for (let l = 1.1; l <= maxLev; l += 0.2) {
     steps.push({ lev: l, apy: rs.netSupplyApr * l - rs.netBorrowCost * (l - 1) });
@@ -810,6 +849,7 @@ function renderPosition() {
   if (!pos) {
     $("no-position").classList.remove("hidden");
     $("position-data").classList.add("hidden");
+    $("metrics-hero").classList.add("hidden");
     ($("close-btn") as HTMLButtonElement).disabled = true;
     ($("repay-btn") as HTMLButtonElement).disabled = true;
     ($("resupply-btn") as HTMLButtonElement).disabled = true;
@@ -824,6 +864,7 @@ function renderPosition() {
 
   $("no-position").classList.add("hidden");
   $("position-data").classList.remove("hidden");
+  $("metrics-hero").classList.remove("hidden");
   ($("close-btn") as HTMLButtonElement).disabled = false;
   ($("repay-btn") as HTMLButtonElement).disabled = pos.dTokens === 0n;
   ($("resupply-btn") as HTMLButtonElement).disabled = false;
@@ -845,10 +886,16 @@ function renderPosition() {
   }
 
   // Animated leverage (#11)
-  animateNumber($("pos-leverage"), pos.leverage, 400, n => `${fmt(n, 2)}\u00D7`);
+  animateNumber($("pos-leverage"), pos.leverage, 200, n => `${fmt(n, 2)}\u00D7`);
+
+  // Hero metrics
+  const hf = pos.hf;
+  const heroHf = $("hero-hf");
+  heroHf.textContent = isFinite(hf) ? fmt(hf, 3) : "\u221E";
+  heroHf.className = `metric-hero-value ${hf > 1.1 ? "hf-ok" : hf > 1.03 ? "hf-warn" : "hf-bad"}`;
+  $("hero-leverage").textContent = `${fmt(pos.leverage, 2)}\u00D7`;
 
   // Per-asset health factor with icon (#22)
-  const hf = pos.hf;
   const hfEl = $("pos-hf");
   const hfIcon = hf > 1.1 ? "\u2713" : hf > 1.03 ? "\u26A0" : "\u2717";
   const hfDec = expertMode ? 5 : 3;
@@ -907,14 +954,20 @@ function renderPosition() {
 
   // Net APY with icon (#22)
   const netAprEl = $("pos-net-apr");
+  const heroApyEl = $("hero-net-apy");
   if (rs && pos.leverage > 0) {
     const netApr = rs.netSupplyApr * pos.leverage - rs.netBorrowCost * (pos.leverage - 1);
     const aprIcon = netApr > 0 ? "\u2713" : "\u2717";
     netAprEl.textContent = `${aprIcon} ${netApr >= 0 ? "+" : ""}${fmt(netApr, 2)}%`;
     netAprEl.className   = `metric-value ${netApr > 0 ? "hf-ok" : "hf-bad"}`;
+    // Hero APY
+    heroApyEl.textContent = `${netApr >= 0 ? "+" : ""}${fmt(netApr, 1)}%`;
+    heroApyEl.className   = `metric-hero-value ${netApr > 0 ? "hf-ok" : "hf-bad"}`;
   } else {
     netAprEl.textContent = "\u2014";
     netAprEl.className   = "metric-value";
+    heroApyEl.textContent = "\u2014";
+    heroApyEl.className   = "metric-hero-value";
   }
 
   // Days until liquidation with ring (#18)
@@ -1302,8 +1355,43 @@ async function closePosition() {
     removePnlEntry(selectedAsset.id, selectedPool.id);
     await loadAll();
   } catch (e: any) {
+    const msg: string = e?.message ?? "";
+    // Pool utilization too high for atomic close \u2014 fall back to two-step:
+    // 1) Deleverage (repay debt using collateral, net flow \u2248 0)
+    // 2) Withdraw remaining collateral (now debt-free, smaller supply impact)
+    if ((msg.includes("#1207") || msg.includes("InvalidUtilRate")) && pos.dTokens > 0n) {
+      try {
+        toast("Pool utilization high \u2014 closing in two steps\u2026", "info");
+        showTxStepper(["Repay Debt", "Withdraw Collateral"]);
+        // Step 1: deleverage \u2014 repay all debt using collateral
+        const repayXdr = await buildRepayXdr(selectedPool, userAddress, pos);
+        await signAndSubmit(repayXdr, `Repay ${selectedAsset.symbol} debt`, 0);
+        updateTxStep(0, "done");
+        // Step 2: withdraw remaining collateral (no debt left)
+        const withdrawXdr = await buildWithdrawXdr(selectedPool, userAddress, pos.asset.id);
+        await signAndSubmit(withdrawXdr, `Withdraw ${selectedAsset.symbol} collateral`, 1);
+        hideTxStepper();
+        removePnlEntry(selectedAsset.id, selectedPool.id);
+        await loadAll();
+        return;
+      } catch (e2: any) {
+        const msg2: string = e2?.message ?? "Transaction failed";
+        markStepperError(2);
+        if (msg2.includes("#1207") || msg2.includes("InvalidUtilRate")) {
+          toast("Pool utilization too high to withdraw all collateral. Debt was repaid \u2014 try withdrawing later when liquidity improves.", "error");
+        } else {
+          toast(msg2.slice(0, 200), "error");
+        }
+        await loadAll();
+        return;
+      }
+    }
     markStepperError(1);
-    toast(e?.message ?? "Transaction failed", "error");
+    if (msg.includes("#1207") || msg.includes("InvalidUtilRate")) {
+      toast("Pool utilization too high \u2014 not enough liquidity to close. Try again later.", "error");
+    } else {
+      toast(msg.slice(0, 200) || "Transaction failed", "error");
+    }
   } finally {
     setLoading($("close-btn") as HTMLButtonElement, false);
   }
@@ -1558,7 +1646,10 @@ function showConnected() {
   $("connect-btn").classList.add("hidden");
   $("wallet-connected").classList.remove("hidden");
   $("connect-prompt").classList.add("hidden");
-  $("dashboard").classList.remove("hidden");
+  if (activeView === "leverage") {
+    $("dashboard").classList.remove("hidden");
+    $("asset-tabs-bar").style.display = "";
+  }
 }
 
 async function connect() {
@@ -1612,12 +1703,14 @@ async function disconnect() {
   $("wallet-connected").classList.add("hidden");
   $("connect-prompt").classList.remove("hidden");
   $("dashboard").classList.add("hidden");
+  $("asset-tabs-bar").style.display = "none";
 }
 
 // ── View switching (Leverage / Swap) ─────────────────────────────────────
 
 function switchView(view: AppView) {
   activeView = view;
+  // Top nav active states
   const overviewBtn = $("proto-overview");
   const blendBtn = $("proto-blend");
   const swapBtn  = $("proto-swap");
@@ -1627,8 +1720,18 @@ function switchView(view: AppView) {
   swapBtn.classList.toggle("active", view === "swap");
   vaultBtn.classList.toggle("active", view === "vault");
 
-  // Toggle pool tabs visibility
+  // Mobile sidebar active states
+  document.getElementById("mobile-proto-overview")?.classList.toggle("active", view === "overview");
+  document.getElementById("mobile-proto-blend")?.classList.toggle("active", view === "leverage");
+  document.getElementById("mobile-proto-swap")?.classList.toggle("active", view === "swap");
+  document.getElementById("mobile-proto-vault")?.classList.toggle("active", view === "vault");
+
+  // Toggle pool tabs visibility (mobile sidebar)
   $("pool-tabs").style.display = view === "leverage" ? "" : "none";
+
+  // Toggle asset tabs bar visibility
+  const assetTabsBar = $("asset-tabs-bar");
+  assetTabsBar.style.display = (view === "leverage" && userAddress) ? "" : "none";
 
   // Hide all views first
   $("overview-view").classList.add("hidden");
@@ -1638,7 +1741,6 @@ function switchView(view: AppView) {
   $("connect-prompt").classList.add("hidden");
 
   if (view === "overview") {
-    $("asset-tabs").style.display = "none";
     if (userAddress) {
       $("overview-view").classList.remove("hidden");
       loadOverview();
@@ -1648,21 +1750,21 @@ function switchView(view: AppView) {
   } else if (view === "leverage") {
     if (userAddress) {
       $("dashboard").classList.remove("hidden");
+      assetTabsBar.style.display = "";
     } else {
       $("connect-prompt").classList.remove("hidden");
     }
-    $("asset-tabs").style.display = "";
   } else if (view === "swap") {
     $("swap-view").classList.remove("hidden");
-    $("asset-tabs").style.display = "none";
     populateSwapAssets();
     updateSwapBtn();
   } else if (view === "vault") {
     $("vault-view").classList.remove("hidden");
-    $("asset-tabs").style.display = "none";
     refreshVaultView();
   }
   closeDrawer();
+  // Close pool dropdown
+  $("pool-dropdown").classList.add("hidden");
 }
 
 // ── Mobile sidebar drawer (#5) ───────────────────────────────────────────
@@ -1849,20 +1951,41 @@ function initTooltips() {
 
 // ── Event listeners ───────────────────────────────────────────────────────────
 
-$("expert-toggle").addEventListener("click", () => {
+// Expert toggle (settings dropdown)
+function toggleExpert() {
   expertMode = !expertMode;
+  // Update settings dropdown badge
   const btn = $("expert-toggle");
+  const badge = btn.querySelector(".settings-badge");
+  if (badge) badge.textContent = expertMode ? "On" : "Off";
   btn.classList.toggle("expert-active", expertMode);
-  btn.textContent = expertMode ? "Expert ON" : "Expert";
+  // Update mobile sidebar toggle
+  const mobileBtn = document.getElementById("mobile-expert-toggle");
+  if (mobileBtn) {
+    mobileBtn.classList.toggle("expert-active", expertMode);
+    mobileBtn.textContent = expertMode ? "Expert ON" : "Expert";
+  }
   renderSelectedAsset();
   updatePreview();
-});
+}
+$("expert-toggle").addEventListener("click", toggleExpert);
+document.getElementById("mobile-expert-toggle")?.addEventListener("click", toggleExpert);
 
-$("theme-toggle").addEventListener("click", () => {
+// Theme toggle (settings dropdown)
+function toggleTheme() {
   const current = document.documentElement.getAttribute("data-theme") as Theme || getSystemTheme();
   const next: Theme = current === "dark" ? "light" : "dark";
   localStorage.setItem("theme", next);
   applyTheme(next);
+}
+$("theme-toggle").addEventListener("click", toggleTheme);
+document.getElementById("mobile-theme-toggle")?.addEventListener("click", toggleTheme);
+
+// Settings dropdown toggle
+$("settings-btn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  $("settings-dropdown").classList.toggle("hidden");
+  $("pool-dropdown").classList.add("hidden");
 });
 
 // Network toggle
@@ -1874,11 +1997,32 @@ $("network-toggle").addEventListener("click", () => {
 // Fund testnet wallet
 $("fund-testnet-btn").addEventListener("click", fundTestnetWallet);
 
-// Protocol nav
+// Protocol nav (desktop top nav)
 $("proto-overview").addEventListener("click", () => switchView("overview"));
-$("proto-blend").addEventListener("click", () => switchView("leverage"));
+$("proto-blend").addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (activeView === "leverage") {
+    // Toggle pool dropdown
+    $("pool-dropdown").classList.toggle("hidden");
+    $("settings-dropdown").classList.add("hidden");
+  } else {
+    switchView("leverage");
+  }
+});
 $("proto-swap").addEventListener("click",  () => switchView("swap"));
 $("proto-vault").addEventListener("click", () => switchView("vault"));
+
+// Mobile sidebar nav
+document.getElementById("mobile-proto-overview")?.addEventListener("click", () => switchView("overview"));
+document.getElementById("mobile-proto-blend")?.addEventListener("click", () => switchView("leverage"));
+document.getElementById("mobile-proto-swap")?.addEventListener("click", () => switchView("swap"));
+document.getElementById("mobile-proto-vault")?.addEventListener("click", () => switchView("vault"));
+
+// Close dropdowns on click outside
+document.addEventListener("click", () => {
+  $("pool-dropdown").classList.add("hidden");
+  $("settings-dropdown").classList.add("hidden");
+});
 
 // Mobile hamburger (#5)
 $("hamburger-btn").addEventListener("click", () => {
@@ -1887,7 +2031,7 @@ $("hamburger-btn").addEventListener("click", () => {
 });
 $("sidebar-backdrop").addEventListener("click", closeDrawer);
 
-// Mobile card tabs (#12)
+// Mobile card tabs (#12) — note: order is swapped in new layout (action=left=0, position=right=1)
 document.querySelectorAll<HTMLButtonElement>(".mobile-card-tab").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".mobile-card-tab").forEach(b => b.classList.remove("active"));
@@ -1895,8 +2039,8 @@ document.querySelectorAll<HTMLButtonElement>(".mobile-card-tab").forEach(btn => 
     const panel = btn.dataset.panel;
     const cards = document.querySelectorAll<HTMLElement>(".two-col > .card");
     if (window.innerWidth <= 900) {
-      cards[0]?.classList.toggle("mobile-hidden", panel !== "position");
-      cards[1]?.classList.toggle("mobile-hidden", panel !== "action");
+      cards[0]?.classList.toggle("mobile-hidden", panel !== "action");
+      cards[1]?.classList.toggle("mobile-hidden", panel !== "position");
     }
   });
 });
@@ -1904,6 +2048,17 @@ document.querySelectorAll<HTMLButtonElement>(".mobile-card-tab").forEach(btn => 
 // Collapsible stats (#23)
 $("stats-toggle").addEventListener("click", () => {
   $("stats-collapsible").classList.toggle("collapsed");
+});
+
+// Vault deposit/withdraw tabs
+document.querySelectorAll<HTMLButtonElement>(".vault-tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".vault-tab").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const action = btn.dataset.vaultAction;
+    $("vault-deposit-section").classList.toggle("hidden", action !== "deposit");
+    $("vault-withdraw-section").classList.toggle("hidden", action !== "withdraw");
+  });
 });
 
 // Slippage selector
@@ -2158,69 +2313,41 @@ function renderOverview(blendPos: OverviewBlendPosition[], vaultPos: OverviewVau
 
   let html = "";
 
-  // Group Blend positions by pool
-  const poolGroups = new Map<string, OverviewBlendPosition[]>();
-  for (const bp of blendPos) {
-    const arr = poolGroups.get(bp.pool.id) ?? [];
-    arr.push(bp);
-    poolGroups.set(bp.pool.id, arr);
-  }
-
-  if (poolGroups.size > 0) {
+  // Blend positions as data table
+  if (blendPos.length > 0) {
     html += `<div class="overview-protocol-section">
       <div class="overview-protocol-header">
         <span class="overview-protocol-dot overview-protocol-dot-blend"></span>
         Blend Protocol
       </div>
-      <div class="overview-positions">`;
+      <table class="overview-table">
+        <thead><tr>
+          <th>Asset</th><th>Pool</th><th class="text-right">Equity</th>
+          <th class="text-right">Leverage</th><th class="text-right">HF</th>
+          <th class="text-right">Net APY</th><th class="text-right">Debt</th>
+        </tr></thead><tbody>`;
 
-    for (const [poolId, positions] of poolGroups) {
-      const pool = getKnownPools().find(p => p.id === poolId)!;
-      for (const bp of positions) {
-        const rs = bp.reserves.find(r => r.asset.id === bp.asset.id);
-        const price = rs?.priceUsd ?? 0;
-        const netApr = rs ? rs.netSupplyApr * bp.pos.leverage - rs.netBorrowCost * (bp.pos.leverage - 1) : 0;
-        const hfColor = bp.pos.hf > 1.1 ? "hf-ok" : bp.pos.hf > 1.03 ? "hf-warn" : "hf-bad";
-        const equityUsd = bp.pos.equity * price;
+    for (const bp of blendPos) {
+      const rs = bp.reserves.find(r => r.asset.id === bp.asset.id);
+      const price = rs?.priceUsd ?? 0;
+      const netApr = rs ? rs.netSupplyApr * bp.pos.leverage - rs.netBorrowCost * (bp.pos.leverage - 1) : 0;
+      const hfColor = bp.pos.hf > 1.1 ? "hf-ok" : bp.pos.hf > 1.03 ? "hf-warn" : "hf-bad";
+      const pool = getKnownPools().find(p => p.id === bp.pool.id)!;
 
-        html += `<div class="overview-pos-card" data-nav-pool="${poolId}" data-nav-asset="${bp.asset.id}">
-          <div class="overview-pos-card-top">
-            <span class="overview-pos-card-symbol">${bp.asset.symbol}</span>
-            <span class="overview-pos-card-pool">${pool.name}</span>
-          </div>
-          <div class="overview-pos-card-grid">
-            <div class="overview-pos-card-metric">
-              <span class="overview-pos-card-label">Equity</span>
-              <span class="overview-pos-card-value">${fmt(bp.pos.equity, 2)} ${bp.asset.symbol}</span>
-            </div>
-            <div class="overview-pos-card-metric">
-              <span class="overview-pos-card-label">Value</span>
-              <span class="overview-pos-card-value">${price > 0 ? "$" + fmt(equityUsd, 2) : "--"}</span>
-            </div>
-            <div class="overview-pos-card-metric">
-              <span class="overview-pos-card-label">Leverage</span>
-              <span class="overview-pos-card-value">${fmt(bp.pos.leverage, 1)}&times;</span>
-            </div>
-            <div class="overview-pos-card-metric">
-              <span class="overview-pos-card-label">Health Factor</span>
-              <span class="overview-pos-card-value ${hfColor}">${isFinite(bp.pos.hf) ? fmt(bp.pos.hf, 3) : "\u221E"}</span>
-            </div>
-            <div class="overview-pos-card-metric">
-              <span class="overview-pos-card-label">Net APY</span>
-              <span class="overview-pos-card-value ${netApr > 0 ? "hf-ok" : "hf-bad"}">${netApr >= 0 ? "+" : ""}${fmt(netApr, 1)}%</span>
-            </div>
-            <div class="overview-pos-card-metric">
-              <span class="overview-pos-card-label">Debt</span>
-              <span class="overview-pos-card-value">${fmt(bp.pos.debt, 2)} ${bp.asset.symbol}</span>
-            </div>
-          </div>
-        </div>`;
-      }
+      html += `<tr data-nav-pool="${bp.pool.id}" data-nav-asset="${bp.asset.id}">
+        <td class="text-label">${bp.asset.symbol}</td>
+        <td style="color:var(--text-2);font-family:var(--sans)">${pool.name}</td>
+        <td class="text-right">${fmt(bp.pos.equity, 2)} ${bp.asset.symbol}</td>
+        <td class="text-right">${fmt(bp.pos.leverage, 1)}&times;</td>
+        <td class="text-right ${hfColor}">${isFinite(bp.pos.hf) ? fmt(bp.pos.hf, 3) : "\u221E"}</td>
+        <td class="text-right ${netApr > 0 ? "hf-ok" : "hf-bad"}">${netApr >= 0 ? "+" : ""}${fmt(netApr, 1)}%</td>
+        <td class="text-right">${fmt(bp.pos.debt, 2)} ${bp.asset.symbol}</td>
+      </tr>`;
     }
-    html += `</div></div>`;
+    html += `</tbody></table></div>`;
   }
 
-  // Vault positions
+  // Vault positions (keep as cards since there's usually only 1)
   if (vaultPos.length > 0) {
     html += `<div class="overview-protocol-section">
       <div class="overview-protocol-header">
@@ -2253,11 +2380,11 @@ function renderOverview(blendPos: OverviewBlendPosition[], vaultPos: OverviewVau
 
   container.innerHTML = html;
 
-  // Wire up click navigation for Blend position cards
-  container.querySelectorAll<HTMLElement>(".overview-pos-card").forEach(card => {
-    card.addEventListener("click", () => {
-      const poolId = card.dataset.navPool!;
-      const assetId = card.dataset.navAsset!;
+  // Wire up click navigation for Blend table rows
+  container.querySelectorAll<HTMLElement>("tr[data-nav-pool]").forEach(row => {
+    row.addEventListener("click", () => {
+      const poolId = row.dataset.navPool!;
+      const assetId = row.dataset.navAsset!;
       const pool = getKnownPools().find(p => p.id === poolId);
       if (pool) {
         selectPool(pool);
@@ -2561,3 +2688,24 @@ $("vault-rebalance-btn").addEventListener("click", async () => {
   renderPoolFooter();
   await loadAll();
 })();
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+
+document.addEventListener("keydown", (e) => {
+  // Ignore shortcuts when typing in inputs
+  const tag = (e.target as HTMLElement).tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+  // R = refresh
+  if (e.key === "r" || e.key === "R") {
+    if (activeView === "leverage" && userAddress) loadAll();
+    else if (activeView === "overview" && userAddress) loadOverview();
+    else if (activeView === "vault") refreshVaultView();
+  }
+  // Escape = close modals/dropdowns
+  if (e.key === "Escape") {
+    $("pool-dropdown").classList.add("hidden");
+    $("settings-dropdown").classList.add("hidden");
+    closeDrawer();
+  }
+});

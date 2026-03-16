@@ -7,7 +7,7 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
@@ -36,7 +36,40 @@
 
   <div id="app">
 
-    <!-- Sidebar -->
+    <!-- Top Navigation Bar -->
+    <nav class="top-nav">
+      <div class="top-nav-left">
+        <button id="hamburger-btn" class="hamburger-btn" aria-label="Open navigation menu">&#9776;</button>
+        <div class="logo">
+          <img src="logo.svg" alt="Turbolong" class="logo-icon-img" />
+          <span class="logo-text">Turbo<span class="logo-accent">long</span></span>
+        </div>
+        <button class="nav-btn" id="proto-overview">Dashboard</button>
+        <button class="nav-btn active" id="proto-blend">Trade <span class="nav-caret">&#9662;</span></button>
+        <div id="pool-dropdown" class="pool-dropdown hidden"></div>
+        <button class="nav-btn" id="proto-vault">Vault</button>
+        <button class="nav-btn" id="proto-swap">Swap</button>
+      </div>
+      <div class="top-nav-right" id="wallet-area">
+        <button id="settings-btn" class="nav-btn" aria-label="Settings">&#9881;</button>
+        <div id="settings-dropdown" class="settings-dropdown hidden">
+          <button id="expert-toggle" class="settings-dropdown-item">Expert Mode <span class="settings-badge">Off</span></button>
+          <button id="theme-toggle" class="settings-dropdown-item">Theme <span class="settings-badge">&#9790;</span></button>
+        </div>
+        <button id="network-toggle" class="btn btn-ghost btn-sm network-toggle" data-tip="Switch between Mainnet and Testnet">Mainnet</button>
+        <button id="connect-btn" class="btn btn-primary btn-connect">Connect Wallet</button>
+        <div id="wallet-connected" class="wallet-connected hidden">
+          <div class="wallet-info">
+            <span class="wallet-dot"></span>
+            <span id="wallet-address" class="mono"></span>
+          </div>
+          <button id="switch-wallet-btn" class="btn btn-ghost btn-sm" data-tip="Switch to a different account">Switch</button>
+          <button id="disconnect-btn" class="btn btn-ghost btn-sm">Disconnect</button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Legacy sidebar for mobile drawer -->
     <aside class="sidebar">
       <div class="sidebar-top">
         <div class="logo">
@@ -44,22 +77,19 @@
           <span class="logo-text">Turbo<span class="logo-accent">long</span></span>
         </div>
         <nav class="sidebar-nav">
-          <!-- Dashboard overview -->
           <div class="protocol-section">
-            <button class="protocol-btn" id="proto-overview">
+            <button class="protocol-btn" id="mobile-proto-overview">
               <span class="protocol-icon">&#9632;</span>
               Dashboard
             </button>
           </div>
-          <!-- Protocol: Blend -->
           <div class="protocol-section">
-            <button class="protocol-btn active" id="proto-blend">
+            <button class="protocol-btn active" id="mobile-proto-blend">
               <span class="protocol-dot protocol-dot-live"></span>
               Blend Protocol
             </button>
             <div id="pool-tabs" class="pool-tabs" role="tablist"></div>
           </div>
-          <!-- Coming soon -->
           <div class="protocol-section">
             <button class="protocol-btn protocol-btn-disabled" disabled>
               <span class="protocol-dot protocol-dot-soon"></span>
@@ -67,16 +97,14 @@
               <span class="coming-soon-badge">Soon</span>
             </button>
           </div>
-          <!-- Vault -->
           <div class="protocol-section">
-            <button class="protocol-btn" id="proto-vault">
+            <button class="protocol-btn" id="mobile-proto-vault">
               <span class="protocol-icon">&#9878;</span>
               Vault
             </button>
           </div>
-          <!-- Swap -->
           <div class="protocol-section">
-            <button class="protocol-btn" id="proto-swap">
+            <button class="protocol-btn" id="mobile-proto-swap">
               <span class="protocol-icon">&#8644;</span>
               Swap
             </button>
@@ -84,36 +112,14 @@
         </nav>
       </div>
       <div class="sidebar-bottom">
-        <button id="expert-toggle" class="sidebar-btn expert-toggle" data-tip="Expert mode: lower minimum HF to 1.005">Expert</button>
-        <button id="theme-toggle" class="sidebar-btn theme-toggle" data-tip="Toggle light/dark mode">&#9790;</button>
+        <button id="mobile-expert-toggle" class="sidebar-btn expert-toggle" data-tip="Expert mode: lower minimum HF to 1.005">Expert</button>
+        <button id="mobile-theme-toggle" class="sidebar-btn theme-toggle" data-tip="Toggle light/dark mode">&#9790;</button>
       </div>
     </aside>
-
-    <!-- Sidebar backdrop for mobile -->
     <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
 
     <!-- Main content -->
     <div class="main-wrap">
-      <!-- Top bar -->
-      <header>
-        <div class="header-left">
-          <button id="hamburger-btn" class="hamburger-btn" aria-label="Open navigation menu">&#9776;</button>
-          <div id="asset-tabs" class="asset-tabs" role="tablist"></div>
-        </div>
-        <div id="wallet-area">
-          <button id="network-toggle" class="btn btn-ghost btn-sm network-toggle" data-tip="Switch between Mainnet and Testnet">Mainnet</button>
-          <button id="connect-btn" class="btn btn-primary btn-connect">Connect Wallet</button>
-          <div id="wallet-connected" class="wallet-connected hidden">
-            <div class="wallet-info">
-              <span class="wallet-dot"></span>
-              <span id="wallet-address" class="mono"></span>
-            </div>
-            <button id="switch-wallet-btn" class="btn btn-ghost btn-sm" data-tip="Switch to a different account">Switch</button>
-            <button id="disconnect-btn" class="btn btn-ghost btn-sm">Disconnect</button>
-          </div>
-        </div>
-      </header>
-
       <!-- Testnet banner -->
       <div id="testnet-banner" class="testnet-banner hidden">
         <span>&#9888; Testnet Mode</span>
@@ -122,15 +128,110 @@
         <button id="fund-testnet-btn" class="btn btn-sm testnet-fund-btn" data-tip="Fund with Friendbot XLM, open USDC trustline, swap XLM for USDC">Fund Wallet</button>
       </div>
 
+      <!-- Asset tabs bar (below nav, visible on trade view) -->
+      <div id="asset-tabs-bar" class="asset-tabs-bar" style="display:none">
+        <div id="asset-tabs" class="asset-tabs" role="tablist"></div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span id="data-freshness" class="data-freshness"></span>
+          <button id="refresh-btn" class="btn btn-ghost btn-sm">&#8635;</button>
+        </div>
+      </div>
+
       <main>
 
-        <!-- Connect prompt -->
+        <!-- Landing page (connect prompt) -->
         <div id="connect-prompt" class="connect-prompt">
-          <img src="logo.svg" alt="Turbolong" class="connect-prompt-logo" />
-          <h2>Connect your wallet</h2>
-          <p>Manage leverage positions on Blend Protocol pools on Stellar.</p>
-          <button class="btn btn-primary btn-lg" onclick="document.getElementById('connect-btn').click()">Connect Wallet</button>
-          <button id="demo-btn" class="btn btn-ghost" style="margin-top: 12px">Try Demo (no wallet)</button>
+          <div class="landing-hero">
+            <img src="logo.svg" alt="Turbolong" class="landing-hero-logo" />
+            <h1>Leverage trading on Stellar. Simplified.</h1>
+            <p>Open leveraged long positions on Blend Protocol pools with a single click. No perps, no funding rates &mdash; just recursive lending loops.</p>
+            <div class="landing-hero-ctas">
+              <button class="btn btn-primary btn-lg" style="width:auto;padding:14px 32px" onclick="document.getElementById('connect-btn').click()">Launch App</button>
+              <button id="demo-btn" class="btn btn-ghost btn-lg" style="width:auto;padding:14px 32px">View Demo</button>
+            </div>
+          </div>
+
+          <div class="landing-stats">
+            <div class="landing-stat">
+              <span class="landing-stat-value">3</span>
+              <span class="landing-stat-label">Pools</span>
+            </div>
+            <div class="landing-stat">
+              <span class="landing-stat-value">8+</span>
+              <span class="landing-stat-label">Assets</span>
+            </div>
+            <div class="landing-stat">
+              <span class="landing-stat-value">12.9&times;</span>
+              <span class="landing-stat-label">Max Leverage</span>
+            </div>
+            <div class="landing-stat">
+              <span class="landing-stat-value">&lt;5s</span>
+              <span class="landing-stat-label">Finality</span>
+            </div>
+          </div>
+
+          <div class="landing-steps">
+            <h2>How It Works</h2>
+            <div class="landing-steps-grid">
+              <div class="landing-step">
+                <div class="landing-step-num">1</div>
+                <h3>Connect Wallet</h3>
+                <p>Use Freighter, Lobstr, xBull, or any Stellar wallet to connect in seconds.</p>
+              </div>
+              <div class="landing-step">
+                <div class="landing-step-num">2</div>
+                <h3>Choose Asset &amp; Leverage</h3>
+                <p>Select a Blend pool and asset, then set your leverage multiplier with a slider.</p>
+              </div>
+              <div class="landing-step">
+                <div class="landing-step-num">3</div>
+                <h3>One-Click Position</h3>
+                <p>Turbolong executes the recursive lending loop atomically. Approve and submit.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="landing-features">
+            <h2>Features</h2>
+            <div class="landing-features-grid">
+              <div class="landing-feature">
+                <h3>Atomic Leverage Loops</h3>
+                <p>Recursive supply/borrow in a single transaction. No partial execution risk.</p>
+              </div>
+              <div class="landing-feature">
+                <h3>Real-Time Health Monitoring</h3>
+                <p>Health factor, liquidation countdown, and borrow headroom updated live.</p>
+              </div>
+              <div class="landing-feature">
+                <h3>BLND Rewards</h3>
+                <p>Claim and auto-convert BLND emissions to compound your position.</p>
+              </div>
+              <div class="landing-feature">
+                <h3>Vault Strategy</h3>
+                <p>Set-and-forget leveraged USDC vault with permissionless rebalancing.</p>
+              </div>
+              <div class="landing-feature">
+                <h3>Multi-Pool Support</h3>
+                <p>Trade across Etherfuse, Fixed, and YieldBlox pools on Blend Protocol.</p>
+              </div>
+              <div class="landing-feature">
+                <h3>Built on Stellar</h3>
+                <p>Fast finality, low fees, and battle-tested Soroban smart contracts.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="landing-risk">
+            <div class="landing-risk-banner">
+              <strong>Risk Disclosure:</strong> Leveraged positions can be liquidated if your Health Factor drops below 1.0. You may lose your entire deposit. This is experimental software &mdash; use at your own risk.
+            </div>
+          </div>
+
+          <div class="landing-footer">
+            <a href="https://docs.blend.capital/" target="_blank" rel="noopener">Blend Docs</a>
+            <a href="https://github.com/blend-capital" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://stellar.expert" target="_blank" rel="noopener">Stellar Expert</a>
+          </div>
         </div>
 
         <!-- Overview (cross-protocol dashboard) -->
@@ -172,7 +273,7 @@
           <!-- Portfolio summary -->
           <div id="portfolio-summary" class="portfolio-summary hidden"></div>
 
-          <!-- Collapsible pool stats -->
+          <!-- Pool stats (visible by default) -->
           <div id="stats-collapsible" class="stats-collapsible">
             <button id="stats-toggle" class="stats-toggle">
               <span>Pool Statistics</span>
@@ -242,92 +343,13 @@
 
           <!-- Mobile card tabs -->
           <div class="mobile-card-tabs" id="mobile-card-tabs">
-            <button class="mobile-card-tab active" data-panel="position">Your Position</button>
-            <button class="mobile-card-tab" data-panel="action">Open / Adjust</button>
+            <button class="mobile-card-tab active" data-panel="action">Open / Adjust</button>
+            <button class="mobile-card-tab" data-panel="position">Position Data</button>
           </div>
 
           <div class="two-col">
 
-            <!-- Current position -->
-            <section class="card">
-              <div class="card-header">
-                <h2>Your Position</h2>
-                <div style="display:flex;align-items:center;gap:8px">
-                  <span id="data-freshness" class="data-freshness"></span>
-                  <button id="refresh-btn" class="btn btn-ghost btn-sm">&#8635;</button>
-                </div>
-              </div>
-              <div class="pool-blnd-row">
-                <div class="blnd-info">
-                  <span class="metric-label">Pending BLND</span>
-                  <span class="metric-value mono" id="pos-blnd">—</span>
-                  <span class="blnd-convert-hint mono" id="compound-estimate"></span>
-                </div>
-                <div class="blnd-actions">
-                  <button id="compound-btn" class="btn btn-secondary btn-sm" disabled data-tip="Claim BLND and swap to position asset">Claim &amp; Convert</button>
-                  <button id="resupply-btn" class="btn btn-secondary btn-sm" disabled data-tip="Deposit wallet balance as extra collateral">Resupply</button>
-                  <button id="claim-btn" class="btn btn-ghost btn-sm" disabled>Claim only</button>
-                </div>
-              </div>
-              <div id="no-position" class="empty-state">
-                <div class="empty-icon">&#128237;</div>
-                <p>No active position for this asset.</p>
-              </div>
-              <div id="position-data" class="hidden">
-                <div id="hf-pos-warning" class="hf-pos-warning hidden"></div>
-                <div class="position-grid">
-                  <div class="position-metric">
-                    <span class="metric-label">Collateral</span>
-                    <span class="metric-value mono" id="pos-collateral">—</span>
-                  </div>
-                  <div class="position-metric">
-                    <span class="metric-label">Debt</span>
-                    <span class="metric-value mono" id="pos-debt">—</span>
-                  </div>
-                  <div class="position-metric">
-                    <span class="metric-label">Net equity</span>
-                    <span class="metric-value mono" id="pos-equity">—</span>
-                  </div>
-                  <div class="position-metric">
-                    <span class="metric-label">Leverage</span>
-                    <span class="metric-value mono" id="pos-leverage">—</span>
-                  </div>
-                  <div class="position-metric">
-                    <span class="metric-label">Asset HF <span class="tooltip" data-tip="Health Factor for this asset only. HF = (collateral x c_factor) / (debt / l_factor). Below 1.0 = liquidatable.">?</span></span>
-                    <span class="metric-value" id="pos-hf">—</span>
-                    <div class="hf-bar-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="hf-bar" id="hf-bar"></div></div>
-                    <div class="hf-gauge-container"></div>
-                  </div>
-                  <div class="position-metric">
-                    <span class="metric-label">Pool HF <span class="tooltip" data-tip="Health Factor across ALL your positions in this pool, weighted by oracle price.">?</span></span>
-                    <span class="metric-value" id="pos-pool-hf">—</span>
-                  </div>
-                  <div class="position-metric">
-                    <span class="metric-label">Net APY <span class="tooltip" data-tip="Annual return on your initial deposit (equity). Formula: supplyAPR x leverage - borrowAPR x (leverage - 1). Includes BLND emission value.">?</span></span>
-                    <span class="metric-value" id="pos-net-apr">—</span>
-                  </div>
-                  <div class="position-metric">
-                    <span class="metric-label">Borrow headroom <span class="tooltip" data-tip="How much more USD you could borrow before Health Factor hits 1.0 (liquidation).">?</span></span>
-                    <span class="metric-value mono" id="pos-headroom">—</span>
-                  </div>
-                  <div class="position-metric position-metric-full">
-                    <span class="metric-label">Days until liquidation <span class="tooltip" data-tip="Estimated days before HF drops to 1.0, based on the interest rate spread only (borrow APR - supply APR).">?</span></span>
-                    <span class="metric-value" id="pos-liq-days">—</span>
-                    <div class="liq-days-note" id="pos-liq-note"></div>
-                  </div>
-                </div>
-                <div class="position-actions">
-                  <button id="repay-btn" class="btn btn-secondary" disabled>Repay Debt</button>
-                  <button id="close-btn" class="btn btn-danger" disabled>Close Position</button>
-                </div>
-                <details class="tx-history" id="tx-history" style="display:none">
-                  <summary class="tx-history-toggle">Recent Transactions</summary>
-                  <div id="tx-history-list" class="tx-history-list"></div>
-                </details>
-              </div>
-            </section>
-
-            <!-- Open / Adjust position -->
+            <!-- Order Panel (left, narrow) -->
             <section class="card">
               <div class="card-header">
                 <h2 id="action-card-title">Open Position</h2>
@@ -356,7 +378,7 @@
                 <span class="adjust-current-value mono" id="adjust-current-lev">—</span>
               </div>
 
-              <!-- Add funds mode: deposit input (reuses same IDs as open for deposit amount) -->
+              <!-- Add funds mode -->
               <div id="add-funds-group" class="form-group hidden">
                 <label>Additional deposit</label>
                 <div class="input-wrap">
@@ -413,7 +435,105 @@
               <button id="add-funds-btn" class="btn btn-primary btn-lg hidden">Add Funds</button>
               <p class="disclaimer" id="open-disclaimer">Two transactions: (1) token approve, (2) <code>submit_with_allowance</code>.</p>
               <p class="disclaimer hidden" id="adjust-disclaimer">Adjusts leverage by borrowing more (increase) or withdrawing &amp; repaying (decrease).</p>
-              <p class="disclaimer hidden" id="add-funds-disclaimer">Deposits additional funds into your existing position at the selected leverage. Two transactions: approve + submit.</p>
+              <p class="disclaimer hidden" id="add-funds-disclaimer">Deposits additional funds into your existing position at the selected leverage.</p>
+            </section>
+
+            <!-- Position + Market Data (right, wide) -->
+            <section class="card">
+              <div class="card-header">
+                <h2>Position</h2>
+              </div>
+
+              <!-- Hero metrics -->
+              <div id="metrics-hero" class="metrics-hero hidden">
+                <div class="metric-hero">
+                  <span class="metric-hero-label">Health Factor</span>
+                  <span class="metric-hero-value" id="hero-hf">—</span>
+                </div>
+                <div class="metric-hero">
+                  <span class="metric-hero-label">Leverage</span>
+                  <span class="metric-hero-value" id="hero-leverage">—</span>
+                </div>
+                <div class="metric-hero">
+                  <span class="metric-hero-label">Net APY</span>
+                  <span class="metric-hero-value" id="hero-net-apy">—</span>
+                </div>
+              </div>
+
+              <div id="no-position" class="empty-state">
+                <p>No open position &mdash; use the panel on the left to open one.</p>
+              </div>
+
+              <div id="position-data" class="hidden">
+                <div id="hf-pos-warning" class="hf-pos-warning hidden"></div>
+
+                <!-- Position data as table rows -->
+                <div class="position-grid">
+                  <div class="position-metric">
+                    <span class="metric-label">Collateral</span>
+                    <span class="metric-value mono" id="pos-collateral">—</span>
+                  </div>
+                  <div class="position-metric">
+                    <span class="metric-label">Debt</span>
+                    <span class="metric-value mono" id="pos-debt">—</span>
+                  </div>
+                  <div class="position-metric">
+                    <span class="metric-label">Net equity</span>
+                    <span class="metric-value mono" id="pos-equity">—</span>
+                  </div>
+                  <div class="position-metric">
+                    <span class="metric-label">Leverage</span>
+                    <span class="metric-value mono" id="pos-leverage">—</span>
+                  </div>
+                  <div class="position-metric">
+                    <span class="metric-label">Asset HF <span class="tooltip" data-tip="Health Factor for this asset only. HF = (collateral x c_factor) / (debt / l_factor). Below 1.0 = liquidatable.">?</span></span>
+                    <span class="metric-value" id="pos-hf">—</span>
+                    <div class="hf-bar-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="hf-bar" id="hf-bar"></div></div>
+                    <div class="hf-gauge-container"></div>
+                  </div>
+                  <div class="position-metric">
+                    <span class="metric-label">Pool HF <span class="tooltip" data-tip="Health Factor across ALL your positions in this pool, weighted by oracle price.">?</span></span>
+                    <span class="metric-value" id="pos-pool-hf">—</span>
+                  </div>
+                  <div class="position-metric">
+                    <span class="metric-label">Net APY <span class="tooltip" data-tip="Annual return on your initial deposit (equity). Formula: supplyAPR x leverage - borrowAPR x (leverage - 1). Includes BLND emission value.">?</span></span>
+                    <span class="metric-value" id="pos-net-apr">—</span>
+                  </div>
+                  <div class="position-metric">
+                    <span class="metric-label">Borrow headroom <span class="tooltip" data-tip="How much more USD you could borrow before Health Factor hits 1.0 (liquidation).">?</span></span>
+                    <span class="metric-value mono" id="pos-headroom">—</span>
+                  </div>
+                  <div class="position-metric position-metric-full">
+                    <span class="metric-label">Days until liquidation <span class="tooltip" data-tip="Estimated days before HF drops to 1.0, based on the interest rate spread only (borrow APR - supply APR).">?</span></span>
+                    <span class="metric-value" id="pos-liq-days">—</span>
+                    <div class="liq-days-note" id="pos-liq-note"></div>
+                  </div>
+                </div>
+
+                <div class="position-actions">
+                  <button id="repay-btn" class="btn btn-secondary" disabled>Repay Debt</button>
+                  <button id="close-btn" class="btn btn-danger" disabled>Close Position</button>
+                </div>
+
+                <!-- BLND rewards (below position) -->
+                <div class="pool-blnd-row" style="margin-top:14px">
+                  <div class="blnd-info">
+                    <span class="metric-label">Pending BLND</span>
+                    <span class="metric-value mono" id="pos-blnd">—</span>
+                    <span class="blnd-convert-hint mono" id="compound-estimate"></span>
+                  </div>
+                  <div class="blnd-actions">
+                    <button id="compound-btn" class="btn btn-secondary btn-sm" disabled data-tip="Claim BLND and swap to position asset">Claim &amp; Convert</button>
+                    <button id="claim-btn" class="btn btn-ghost btn-sm" disabled>Claim</button>
+                    <button id="resupply-btn" class="btn btn-ghost btn-sm" disabled data-tip="Deposit wallet balance as extra collateral">Resupply</button>
+                  </div>
+                </div>
+
+                <details class="tx-history" id="tx-history" style="display:none">
+                  <summary class="tx-history-toggle">Recent Transactions</summary>
+                  <div id="tx-history-list" class="tx-history-list"></div>
+                </details>
+              </div>
             </section>
 
           </div><!-- .two-col -->
@@ -463,8 +583,8 @@
               </div>
             </div>
 
-            <!-- Broker settings — always visible -->
-            <details class="broker-settings" open>
+            <!-- Broker settings — collapsed by default -->
+            <details class="broker-settings">
               <summary class="broker-settings-title">Broker Settings</summary>
               <div class="broker-settings-body">
                 <div class="preview-row slippage-row">
@@ -591,29 +711,38 @@
               </div>
             </div>
 
-            <!-- Deposit / Withdraw -->
+            <!-- Deposit / Withdraw with tabs -->
             <div class="vault-actions">
-              <div class="form-group">
-                <label>Deposit <span id="vault-asset-label">USDC</span></label>
-                <div class="input-wrap">
-                  <input type="number" id="vault-deposit-input" class="input mono" placeholder="100" min="0" step="any" />
-                  <button type="button" id="vault-deposit-max" class="btn btn-ghost input-max-btn">Max</button>
-                  <span class="input-suffix" id="vault-deposit-suffix">USDC</span>
-                </div>
-                <span class="balance-hint">Wallet: <span id="vault-wallet-balance">--</span></span>
+              <div class="vault-tabs">
+                <button class="vault-tab active" data-vault-action="deposit">Deposit</button>
+                <button class="vault-tab" data-vault-action="withdraw">Withdraw</button>
               </div>
-              <button id="vault-deposit-btn" class="btn btn-primary btn-lg" disabled>Deposit</button>
 
-              <div class="form-group" style="margin-top:20px">
-                <label>Withdraw <span id="vault-withdraw-label">USDC</span></label>
-                <div class="input-wrap">
-                  <input type="number" id="vault-withdraw-input" class="input mono" placeholder="50" min="0" step="any" />
-                  <button type="button" id="vault-withdraw-max" class="btn btn-ghost input-max-btn">Max</button>
-                  <span class="input-suffix" id="vault-withdraw-suffix">USDC</span>
+              <div id="vault-deposit-section">
+                <div class="form-group">
+                  <label>Deposit <span id="vault-asset-label">USDC</span></label>
+                  <div class="input-wrap">
+                    <input type="number" id="vault-deposit-input" class="input mono" placeholder="100" min="0" step="any" />
+                    <button type="button" id="vault-deposit-max" class="btn btn-ghost input-max-btn">Max</button>
+                    <span class="input-suffix" id="vault-deposit-suffix">USDC</span>
+                  </div>
+                  <span class="balance-hint">Wallet: <span id="vault-wallet-balance">--</span></span>
                 </div>
-                <span class="balance-hint">In vault: <span id="vault-withdraw-balance">--</span></span>
+                <button id="vault-deposit-btn" class="btn btn-primary btn-lg" disabled>Deposit</button>
               </div>
-              <button id="vault-withdraw-btn" class="btn btn-secondary btn-lg" disabled>Withdraw</button>
+
+              <div id="vault-withdraw-section" class="hidden">
+                <div class="form-group">
+                  <label>Withdraw <span id="vault-withdraw-label">USDC</span></label>
+                  <div class="input-wrap">
+                    <input type="number" id="vault-withdraw-input" class="input mono" placeholder="50" min="0" step="any" />
+                    <button type="button" id="vault-withdraw-max" class="btn btn-ghost input-max-btn">Max</button>
+                    <span class="input-suffix" id="vault-withdraw-suffix">USDC</span>
+                  </div>
+                  <span class="balance-hint">In vault: <span id="vault-withdraw-balance">--</span></span>
+                </div>
+                <button id="vault-withdraw-btn" class="btn btn-secondary btn-lg" disabled>Withdraw</button>
+              </div>
             </div>
 
             <div class="vault-contract-footer">
@@ -639,7 +768,5 @@
   <div id="tooltip-popover" class="tooltip-popover" role="tooltip"></div>
 
   <script type="module" src="/src/main.ts"></script>
-  <!-- Cloudflare Web Analytics (free) — replace token after enabling in CF dashboard -->
-  <!-- <script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "YOUR_CF_ANALYTICS_TOKEN"}'></script> -->
 </body>
 </html>
