@@ -460,6 +460,20 @@
                 </div>
               </div>
 
+              <!-- BLND rewards (pool-wide, always visible) -->
+              <div class="pool-blnd-row">
+                <div class="blnd-info">
+                  <span class="metric-label">Pending BLND</span>
+                  <span class="metric-value mono" id="pos-blnd">—</span>
+                  <span class="blnd-convert-hint mono" id="compound-estimate"></span>
+                </div>
+                <div class="blnd-actions">
+                  <button id="compound-btn" class="btn btn-secondary btn-sm" disabled data-tip="Claim BLND and swap to position asset">Claim &amp; Convert</button>
+                  <button id="claim-btn" class="btn btn-ghost btn-sm" disabled>Claim</button>
+                  <button id="resupply-btn" class="btn btn-ghost btn-sm" disabled data-tip="Deposit wallet balance as extra collateral">Resupply</button>
+                </div>
+              </div>
+
               <div id="no-position" class="empty-state">
                 <p>No open position &mdash; use the panel on the left to open one.</p>
               </div>
@@ -513,20 +527,6 @@
                 <div class="position-actions">
                   <button id="repay-btn" class="btn btn-secondary" disabled>Repay Debt</button>
                   <button id="close-btn" class="btn btn-danger" disabled>Close Position</button>
-                </div>
-
-                <!-- BLND rewards (below position) -->
-                <div class="pool-blnd-row" style="margin-top:14px">
-                  <div class="blnd-info">
-                    <span class="metric-label">Pending BLND</span>
-                    <span class="metric-value mono" id="pos-blnd">—</span>
-                    <span class="blnd-convert-hint mono" id="compound-estimate"></span>
-                  </div>
-                  <div class="blnd-actions">
-                    <button id="compound-btn" class="btn btn-secondary btn-sm" disabled data-tip="Claim BLND and swap to position asset">Claim &amp; Convert</button>
-                    <button id="claim-btn" class="btn btn-ghost btn-sm" disabled>Claim</button>
-                    <button id="resupply-btn" class="btn btn-ghost btn-sm" disabled data-tip="Deposit wallet balance as extra collateral">Resupply</button>
-                  </div>
                 </div>
 
                 <details class="tx-history" id="tx-history" style="display:none">

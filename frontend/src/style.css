@@ -607,8 +607,19 @@ main { flex: 1; max-width: 1200px; width: 100%; margin: 0 auto; padding: 20px 24
 .leverage-num-input { width: 68px; padding: 5px 6px; font-size: 15px; text-align: right; padding-right: 4px; }
 .slider-value-x { font-family: var(--mono); font-size: 16px; font-weight: 700; color: var(--text-3); margin-left: -4px; }
 
-/* Slider risk zones — hidden by default in new design, gradient track replaces them */
-.slider-zones { display: none; }
+/* Slider risk zones */
+.slider-zones {
+  display: flex; justify-content: space-between; font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .3px; margin-top: -4px; margin-bottom: 10px; padding: 0 2px;
+}
+.slider-zone { padding: 2px 6px; border-radius: 4px; transition: all .2s; color: var(--text-3); }
+.zone-conservative { color: var(--success); }
+.zone-moderate { color: var(--primary); }
+.zone-aggressive { color: var(--warning); }
+.zone-degen { color: var(--danger); }
+.zone-maxi-degen { color: #FF4D6A; text-shadow: 0 0 6px rgba(255,77,106,.4); }
+.slider-zone.active { opacity: 1; font-weight: 800; }
+.slider-zone:not(.active) { opacity: .4; }
 
 /* APY chart */
 .apy-chart { margin: 4px 0 10px; overflow: visible; }
