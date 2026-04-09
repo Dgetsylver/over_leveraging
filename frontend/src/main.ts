@@ -1180,9 +1180,13 @@ function updatePreview() {
 
   if (rs) {
     const proj = projectRates(rs, supply, borrow);
-    const netApy = aprToApy(proj.netSupplyApr * lev - proj.netBorrowCost * (lev - 1));
+    const netApr = proj.netSupplyApr * lev - proj.netBorrowCost * (lev - 1);
+    const netApy = aprToApy(netApr);
     $("prev-net-apr").textContent = `${fmt(netApy, 2)}% APY on equity`;
     $("prev-net-apr").className   = `prev-net-apr ${netApy > 0 ? "apr-great" : "apr-bad"}`;
+    const prevTip = $("prev-net-tip");
+    if (prevTip) prevTip.setAttribute("data-tip",
+      `Approximate APY — Blend interest does not auto-compound. Actual net APR: ${fmt(netApr, 2)}%`);
 
     // Days until liquidation at this leverage (interest-only, no BLND)
     const spreadPct = proj.interestBorrowApr - proj.interestSupplyApr;
