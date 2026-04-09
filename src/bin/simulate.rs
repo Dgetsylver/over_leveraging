@@ -349,6 +349,46 @@ fn main() {
     println!("  ┌─────────────────────────────────────────────────────────┐");
     println!("  │                     Risk Summary                        │");
     println!("  ├─────────────────────────────────────────────────────────┤");
+
+    // ── Structural vulnerability warnings ──
+    //
+    // These warnings flag the critical exploit vectors identified in the
+    // oracle & flash loan analysis:
+    //
+    // 1. Circular Collateral Lock: At high utilization, d-tokens can't be
+    //    redeemed → liquidators won't act → bad debt spiral.
+    //
+    // 2. Rate Manipulation: Abnormally high borrow-supply spread may
+    //    indicate an attacker spiking utilization to force liquidations.
+    //
+    // 3. Cascade Risk: Large leveraged positions at similar HF levels
+    //    can trigger chain liquidations when one position is liquidated.
+
+    let max_safe_util: f64 = 0.85;
+    if util > max_safe_util {
+        println!("  │  ⛔ UTILIZATION: {:.1}% — ABOVE {:.0}% SAFETY CAP           │",
+            util * 100.0, max_safe_util * 100.0);
+        println!("  │    Collateral d-tokens are ILLIQUID at this level.       │");
+        println!("  │    Liquidators cannot redeem → bad debt accumulates.     │");
+        println!("  │    DO NOT open new leveraged positions.                  │");
+        println!("  ├─────────────────────────────────────────────────────────┤");
+    } else if util > 0.75 {
+        println!("  │  ⚠  Utilization {:.1}% — approaching {:.0}% cap            │",
+            util * 100.0, max_safe_util * 100.0);
+        println!("  │    Opening large loops may push utilization past limit.  │");
+        println!("  ├─────────────────────────────────────────────────────────┤");
+    }
+
+    // Rate manipulation guard
+    let spread = borrow_apr - supply_apr;
+    if spread > 0.15 {
+        println!("  │  ⛔ RATE SPREAD: {:.1}%/yr — ABNORMALLY HIGH             │",
+            spread * 100.0);
+        println!("  │    May indicate rate manipulation attack. Do not open    │");
+        println!("  │    new positions until rates stabilize.                  │");
+        println!("  ├─────────────────────────────────────────────────────────┤");
+    }
+
     println!("  │  Collateral = Borrowed = USDC → NO price-based liq     │");
     println!("  │  Safe max: {:>2} loops → {:.3}× leverage (HF ≥ 1.05)    │",
         last_safe_loop, safe_lev);

@@ -1,0 +1,100 @@
+{
+  "last_modified_ledger_seq": 56128697,
+  "data": {
+    "contract_data": {
+      "ext": "v0",
+      "contract": "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR",
+      "key": "ledger_key_contract_instance",
+      "durability": "persistent",
+      "val": {
+        "contract_instance": {
+          "executable": "stellar_asset",
+          "storage": [
+            {
+              "key": {
+                "symbol": "METADATA"
+              },
+              "val": {
+                "map": [
+                  {
+                    "key": {
+                      "symbol": "decimal"
+                    },
+                    "val": {
+                      "u32": 7
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "name"
+                    },
+                    "val": {
+                      "string": "USTRY:GCRYUGD5NVARGXT56XEZI5CIFCQETYHAPQQTHO2O3IQZTHDH4LATMYWC"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "symbol"
+                    },
+                    "val": {
+                      "string": "USTRY"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "Admin"
+                  }
+                ]
+              },
+              "val": {
+                "address": "GCRYUGD5NVARGXT56XEZI5CIFCQETYHAPQQTHO2O3IQZTHDH4LATMYWC"
+              }
+            },
+            {
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "AssetInfo"
+                  }
+                ]
+              },
+              "val": {
+                "vec": [
+                  {
+                    "symbol": "AlphaNum12"
+                  },
+                  {
+                    "map": [
+                      {
+                        "key": {
+                          "symbol": "asset_code"
+                        },
+                        "val": {
+                          "string": "USTRY\\0\\0\\0\\0\\0\\0\\0"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "issuer"
+                        },
+                        "val": {
+                          "bytes": "a38a187d6d41135e7df5c994744828a049e0e07c2133bb4eda21999c67e2c136"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "ext": "v0"
+}

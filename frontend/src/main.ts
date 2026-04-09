@@ -763,7 +763,7 @@ function renderSelectedAsset() {
   renderAprLine("supply-blnd-apr",     rs.blndSupplyApr,     false, true);
   renderAprLine("supply-net-apr",      rs.netSupplyApr,      false);
   renderAprLine("borrow-interest-apr", rs.interestBorrowApr, true);
-  renderAprLine("borrow-blnd-apr",     rs.blndBorrowApr,     false, true);
+  renderAprLine("borrow-blnd-apr",     -rs.blndBorrowApr,    false, true);
   renderAprLine("borrow-net-cost",     rs.netBorrowCost,     true);
 
   // Don't auto-collapse — user controls visibility via the toggle
@@ -2706,6 +2706,75 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     $("pool-dropdown").classList.add("hidden");
     $("settings-dropdown").classList.add("hidden");
+    $("alert-modal-overlay").classList.add("hidden");
     closeDrawer();
+  }
+});
+
+// ── APY Alert subscription ──────────────────────────────────────────────────
+
+const ALERTS_WORKER_URL = "https://turbolong-alerts.workers.dev";
+
+$("alert-bell-btn").addEventListener("click", () => {
+  $("alert-pool-name").textContent = selectedPool.name;
+  $("alert-asset-name").textContent = selectedAsset.symbol;
+
+  // Pre-select the closest leverage bracket to current slider value
+  const curLev = parseFloat(($("leverage-slider") as HTMLInputElement).value) || 5;
+  const brackets = [2, 3, 5, 8, 10];
+  const closest = brackets.reduce((a, b) => Math.abs(b - curLev) < Math.abs(a - curLev) ? b : a);
+  ($("alert-leverage") as HTMLSelectElement).value = String(closest);
+
+  $("alert-modal-overlay").classList.remove("hidden");
+});
+
+$("alert-modal-close").addEventListener("click", () => {
+  $("alert-modal-overlay").classList.add("hidden");
+});
+
+$("alert-modal-overlay").addEventListener("click", (e) => {
+  if (e.target === $("alert-modal-overlay")) {
+    $("alert-modal-overlay").classList.add("hidden");
+  }
+});
+
+$("alert-subscribe-btn").addEventListener("click", async () => {
+  const email = ($("alert-email") as HTMLInputElement).value.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    toast("Please enter a valid email address.", "error");
+    return;
+  }
+
+  const leverageBracket = Number(($("alert-leverage") as HTMLSelectElement).value);
+  const btn = $("alert-subscribe-btn") as HTMLButtonElement;
+  btn.disabled = true;
+  btn.textContent = "Subscribing...";
+
+  try {
+    const res = await fetch(`${ALERTS_WORKER_URL}/subscribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        pool_id: selectedPool.id,
+        asset_symbol: selectedAsset.symbol,
+        leverage_bracket: leverageBracket,
+      }),
+    });
+
+    const data = await res.json() as any;
+
+    if (data.ok) {
+      toast("Check your email to verify your alert subscription.", "success");
+      $("alert-modal-overlay").classList.add("hidden");
+      ($("alert-email") as HTMLInputElement).value = "";
+    } else {
+      toast(data.error || "Subscription failed.", "error");
+    }
+  } catch (e: any) {
+    toast(`Subscription failed: ${e.message?.slice(0, 100)}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Subscribe";
   }
 });

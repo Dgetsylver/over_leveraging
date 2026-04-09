@@ -1,0 +1,129 @@
+{
+  "last_modified_ledger_seq": 60001496,
+  "data": {
+    "contract_data": {
+      "ext": "v0",
+      "contract": "CDMAVJPFXPADND3YRL4BSM3AKZWCTFMX27GLLXCML3PD62HEQS5FPVAI",
+      "key": {
+        "vec": [
+          {
+            "symbol": "ResConfig"
+          },
+          {
+            "address": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"
+          }
+        ]
+      },
+      "durability": "persistent",
+      "val": {
+        "map": [
+          {
+            "key": {
+              "symbol": "c_factor"
+            },
+            "val": {
+              "u32": 9500000
+            }
+          },
+          {
+            "key": {
+              "symbol": "decimals"
+            },
+            "val": {
+              "u32": 7
+            }
+          },
+          {
+            "key": {
+              "symbol": "enabled"
+            },
+            "val": {
+              "bool": true
+            }
+          },
+          {
+            "key": {
+              "symbol": "index"
+            },
+            "val": {
+              "u32": 1
+            }
+          },
+          {
+            "key": {
+              "symbol": "l_factor"
+            },
+            "val": {
+              "u32": 9500000
+            }
+          },
+          {
+            "key": {
+              "symbol": "max_util"
+            },
+            "val": {
+              "u32": 9500000
+            }
+          },
+          {
+            "key": {
+              "symbol": "r_base"
+            },
+            "val": {
+              "u32": 300000
+            }
+          },
+          {
+            "key": {
+              "symbol": "r_one"
+            },
+            "val": {
+              "u32": 400000
+            }
+          },
+          {
+            "key": {
+              "symbol": "r_three"
+            },
+            "val": {
+              "u32": 50000000
+            }
+          },
+          {
+            "key": {
+              "symbol": "r_two"
+            },
+            "val": {
+              "u32": 1200000
+            }
+          },
+          {
+            "key": {
+              "symbol": "reactivity"
+            },
+            "val": {
+              "u32": 20
+            }
+          },
+          {
+            "key": {
+              "symbol": "supply_cap"
+            },
+            "val": {
+              "i128": "100000000000000"
+            }
+          },
+          {
+            "key": {
+              "symbol": "util"
+            },
+            "val": {
+              "u32": 8000000
+            }
+          }
+        ]
+      }
+    }
+  },
+  "ext": "v0"
+}

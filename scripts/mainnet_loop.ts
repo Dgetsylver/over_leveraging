@@ -299,9 +299,219 @@ async function executeLoop(cFactor: bigint): Promise<void> {
   console.log(`  https://mainnet.blend.capital/dashboard/?poolId=${POOL_ID}`);
 }
 
+// ── HF Monitor with auto-deleverage ─────────────────────────────────────────
+//
+// When --monitor is passed, instead of opening a new position, the script
+// watches the user's existing position and automatically deleverages (repays
+// debt by withdrawing collateral) if HF drops below a threshold.
+//
+// This mitigates the "circular collateral / liquidity lock" vulnerability:
+// if utilization is high and HF is dropping, we proactively unwind rather
+// than waiting for external liquidators (who may not act because d-tokens
+// are illiquid at high utilization).
+//
+// Usage:
+//   MAINNET_SECRET=S... npx tsx mainnet_loop.ts --monitor [--hf-threshold 1.05] [--check-interval 60]
+
+const monitorMode = args.includes("--monitor");
+const hfThreshold = parseFloat(getArg("--hf-threshold", "1.05"));
+const checkInterval = parseInt(getArg("--check-interval", "60")); // seconds
+
+/** Maximum pool utilization at which new positions are allowed. */
+const MAX_SAFE_UTILIZATION = 0.85;
+
+/** Fetch raw reserve data for CETES. */
+async function fetchReserve(): Promise<any> {
+  const pool = new Contract(POOL_ID);
+  const acc  = await server.getAccount(account);
+  const tx = new TransactionBuilder(acc, { fee: BASE_FEE, networkPassphrase: PASSPHRASE })
+    .addOperation(pool.call("get_reserve", new Address(CETES_ID).toScVal()))
+    .setTimeout(30)
+    .build();
+  const sim = await server.simulateTransaction(tx);
+  if (!SorobanRpc.Api.isSimulationSuccess(sim)) return null;
+  return scValToNative(sim.result!.retval);
+}
+
+/** Fetch user's current position for CETES. */
+async function fetchPosition(): Promise<{ collateral: number; debt: number; hf: number } | null> {
+  const pool = new Contract(POOL_ID);
+  const acc  = await server.getAccount(account);
+  const tx = new TransactionBuilder(acc, { fee: BASE_FEE, networkPassphrase: PASSPHRASE })
+    .addOperation(pool.call("get_positions", new Address(account).toScVal()))
+    .setTimeout(30)
+    .build();
+  const sim = await server.simulateTransaction(tx);
+  if (!SorobanRpc.Api.isSimulationSuccess(sim)) return null;
+  const raw: any = scValToNative(sim.result!.retval);
+
+  const reserve = await fetchReserve();
+  if (!reserve) return null;
+
+  // CETES is index 2 in the Etherfuse pool reserve list
+  const bTokens = BigInt(raw?.collateral?.[2] ?? 0);
+  const dTokens = BigInt(raw?.liabilities?.[2] ?? 0);
+  if (bTokens === 0n && dTokens === 0n) return null;
+
+  const bRate = BigInt(reserve.data.b_rate);
+  const dRate = BigInt(reserve.data.d_rate);
+  const RATE_DEC = 1_000_000_000_000n;
+
+  const collateral = Number(bTokens * bRate / RATE_DEC) / 1e7;
+  const debt       = Number(dTokens * dRate / RATE_DEC) / 1e7;
+  const c          = Number(BigInt(reserve.config.c_factor)) / 1e7;
+  const hf         = debt > 0 ? (collateral * c) / debt : Infinity;
+
+  return { collateral, debt, hf };
+}
+
+/** Fetch pool utilization for CETES. */
+async function fetchUtilization(): Promise<number> {
+  const reserve = await fetchReserve();
+  if (!reserve) return 0;
+  const bRate = Number(BigInt(reserve.data.b_rate)) / 1e12;
+  const dRate = Number(BigInt(reserve.data.d_rate)) / 1e12;
+  const bSupply = Number(BigInt(reserve.data.b_supply));
+  const dSupply = Number(BigInt(reserve.data.d_supply));
+  const totalSupply = dSupply * dRate;
+  const totalBorrow = bSupply * bRate;
+  return totalSupply > 0 ? totalBorrow / totalSupply : 0;
+}
+
+/** Execute a partial deleverage: withdraw some collateral and repay equivalent debt. */
+async function deleverage(fraction: number): Promise<void> {
+  const pos = await fetchPosition();
+  if (!pos || pos.debt <= 0) {
+    console.log("  No debt to deleverage.");
+    return;
+  }
+
+  // Deleverage a fraction of the debt
+  const repayAmount = BigInt(Math.round(pos.debt * fraction * 1e7));
+  const repayWithBuffer = repayAmount * 1005n / 1000n; // +0.5% buffer
+
+  const pool      = new Contract(POOL_ID);
+  const addrScVal = new Address(account).toScVal();
+  const requests  = xdr.ScVal.scvVec([
+    buildRequest(CETES_ID, repayWithBuffer, 3), // WITHDRAW_COLLATERAL
+    buildRequest(CETES_ID, repayWithBuffer, 5), // REPAY
+  ]);
+
+  await simulateAndSubmit("deleverage (withdraw+repay)", () =>
+    pool.call("submit_with_allowance", addrScVal, addrScVal, addrScVal, requests)
+  );
+}
+
+async function monitorLoop(): Promise<void> {
+  console.log(`\n╔══════════════════════════════════════════════════════════╗`);
+  console.log(`║       Blend Mainnet · HF Monitor & Auto-Deleverage       ║`);
+  console.log(`╚══════════════════════════════════════════════════════════╝`);
+  console.log(`  Account:        ${account}`);
+  console.log(`  HF threshold:   ${hfThreshold}`);
+  console.log(`  Check interval: ${checkInterval}s`);
+  console.log(`  Dry run:        ${dryRun}`);
+  console.log(`\nMonitoring… (Ctrl+C to stop)\n`);
+
+  while (true) {
+    try {
+      const pos = await fetchPosition();
+      const util = await fetchUtilization();
+      const now = new Date().toISOString().slice(11, 19);
+
+      if (!pos) {
+        console.log(`  [${now}] No active position found.`);
+      } else {
+        const status = pos.hf < hfThreshold ? "⚠ DANGER" :
+                       pos.hf < hfThreshold * 1.1 ? "⚡ WATCH" : "✓ OK";
+        console.log(
+          `  [${now}] HF=${pos.hf.toFixed(4)} ` +
+          `coll=${pos.collateral.toFixed(2)} debt=${pos.debt.toFixed(2)} ` +
+          `util=${(util * 100).toFixed(1)}% ${status}`
+        );
+
+        // Auto-deleverage if HF is below threshold
+        if (pos.hf < hfThreshold && pos.debt > 0) {
+          console.log(`\n  ⚠ HF ${pos.hf.toFixed(4)} < ${hfThreshold} — triggering auto-deleverage!`);
+
+          if (dryRun) {
+            console.log(`  [DRY RUN] Would deleverage 25% of debt (${(pos.debt * 0.25).toFixed(2)} CETES)`);
+          } else {
+            // Deleverage 25% of debt each time — brings HF back up without
+            // fully closing the position (preserving BLND emission exposure).
+            await deleverage(0.25);
+            console.log(`  Auto-deleverage complete. Rechecking position…\n`);
+            continue; // Re-check immediately
+          }
+        }
+
+        // Warn about high utilization even if HF is OK
+        if (util > MAX_SAFE_UTILIZATION) {
+          console.log(
+            `  ⚠ Pool utilization ${(util * 100).toFixed(1)}% > ${(MAX_SAFE_UTILIZATION * 100).toFixed(0)}% — ` +
+            `d-tokens illiquid, liquidators may not act. Consider manual deleverage.`
+          );
+        }
+      }
+    } catch (e: any) {
+      console.error(`  [error] ${e?.message ?? e}`);
+    }
+
+    await new Promise(r => setTimeout(r, checkInterval * 1000));
+  }
+}
+
+// ── Pre-flight safety checks for opening new positions ────────────────────────
+
+async function checkSafety(cFactor: bigint): Promise<void> {
+  const util = await fetchUtilization();
+  const c = Number(cFactor) / 1e7;
+
+  console.log(`\n  Pool utilization: ${(util * 100).toFixed(1)}%`);
+
+  if (util > MAX_SAFE_UTILIZATION) {
+    console.error(
+      `\n  ✗ Pool utilization ${(util * 100).toFixed(1)}% exceeds ${(MAX_SAFE_UTILIZATION * 100).toFixed(0)}% safety cap.`
+    );
+    console.error(
+      `    High utilization means collateral d-tokens are illiquid — liquidators won't act.`
+    );
+    if (!dryRun) process.exit(1);
+    console.error(`    (Continuing in dry-run mode despite safety failure)`);
+  }
+
+  // Projected utilization after loop
+  const reserve = await fetchReserve();
+  if (reserve) {
+    const bRate = Number(BigInt(reserve.data.b_rate)) / 1e12;
+    const dRate = Number(BigInt(reserve.data.d_rate)) / 1e12;
+    const bSupply = Number(BigInt(reserve.data.b_supply));
+    const dSupply = Number(BigInt(reserve.data.d_supply));
+    const poolSupply = dSupply * dRate / 1e7;
+    const poolBorrow = bSupply * bRate / 1e7;
+
+    const lev = (1 - Math.pow(c, loops + 1)) / (1 - c);
+    const addSupply = initialCetes * lev;
+    const addBorrow = initialCetes * (lev - 1);
+    const projUtil = (poolBorrow + addBorrow) / (poolSupply + addSupply);
+
+    if (projUtil > MAX_SAFE_UTILIZATION) {
+      console.error(
+        `\n  ✗ This position would push utilization to ${(projUtil * 100).toFixed(1)}%. ` +
+        `Reduce --loops or --initial.`
+      );
+      if (!dryRun) process.exit(1);
+    }
+  }
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
+  if (monitorMode) {
+    await monitorLoop();
+    return;
+  }
+
   const cFactor = await fetchCFactor();
   console.log(`\nPool CETES c_factor: ${Number(cFactor) / 1e7 * 100}% (live from RPC)`);
 
@@ -313,6 +523,9 @@ async function main() {
     console.error(`\n  ✗ Insufficient CETES: have ${balanceCetes.toFixed(7)}, need ${initialCetes.toFixed(7)}`);
     process.exit(1);
   }
+
+  // Safety checks before opening position
+  await checkSafety(cFactor);
 
   await executeLoop(cFactor);
 }

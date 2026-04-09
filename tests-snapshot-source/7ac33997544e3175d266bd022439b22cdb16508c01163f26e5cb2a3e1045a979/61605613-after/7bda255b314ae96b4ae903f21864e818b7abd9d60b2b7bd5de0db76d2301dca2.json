@@ -1,0 +1,33 @@
+{
+  "last_modified_ledger_seq": 60001504,
+  "data": {
+    "contract_data": {
+      "ext": "v0",
+      "contract": "CDMAVJPFXPADND3YRL4BSM3AKZWCTFMX27GLLXCML3PD62HEQS5FPVAI",
+      "key": {
+        "symbol": "ResList"
+      },
+      "durability": "persistent",
+      "val": {
+        "vec": [
+          {
+            "address": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"
+          },
+          {
+            "address": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"
+          },
+          {
+            "address": "CAL6ER2TI6CTRAY6BFXWNWA7WTYXUXTQCHUBCIBU5O6KM3HJFG6Z6VXV"
+          },
+          {
+            "address": "CBLV4ATSIWU67CFSQU2NVRKINQIKUZ2ODSZBUJTJ43VJVRSBTZYOPNUR"
+          },
+          {
+            "address": "CD6M4R2322BYCY2LNWM74PEBQAQ63SA3DUJLI3L4225U4ZVCLMSCBCIS"
+          }
+        ]
+      }
+    }
+  },
+  "ext": "v0"
+}

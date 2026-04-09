@@ -94,7 +94,7 @@ const MAINNET_CONFIG: NetworkConfig = {
       id:        "CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD",
       name:      "Fixed",
       oracleId:  "CCVTVW2CVA7JLH4ROQGP3CU4T3EXVCK66AZGSM4MUQPXAI4QHCZPOATS",
-      oracleDec: 1e7,
+      oracleDec: 1e14,
       backstopFP: 2_000_000,
       status:    1,
       assetIds: [

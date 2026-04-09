@@ -1,0 +1,100 @@
+{
+  "last_modified_ledger_seq": 50463389,
+  "data": {
+    "contract_data": {
+      "ext": "v0",
+      "contract": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+      "key": "ledger_key_contract_instance",
+      "durability": "persistent",
+      "val": {
+        "contract_instance": {
+          "executable": "stellar_asset",
+          "storage": [
+            {
+              "key": {
+                "symbol": "METADATA"
+              },
+              "val": {
+                "map": [
+                  {
+                    "key": {
+                      "symbol": "decimal"
+                    },
+                    "val": {
+                      "u32": 7
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "name"
+                    },
+                    "val": {
+                      "string": "USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "symbol"
+                    },
+                    "val": {
+                      "string": "USDC"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "Admin"
+                  }
+                ]
+              },
+              "val": {
+                "address": "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"
+              }
+            },
+            {
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "AssetInfo"
+                  }
+                ]
+              },
+              "val": {
+                "vec": [
+                  {
+                    "symbol": "AlphaNum4"
+                  },
+                  {
+                    "map": [
+                      {
+                        "key": {
+                          "symbol": "asset_code"
+                        },
+                        "val": {
+                          "string": "USDC"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "issuer"
+                        },
+                        "val": {
+                          "bytes": "3b9911380efe988ba0a8900eb1cfe44f366f7dbe946bed077240f7f624df15c5"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "ext": "v0"
+}

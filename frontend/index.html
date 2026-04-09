@@ -134,6 +134,7 @@
         <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
           <span id="data-freshness" class="data-freshness"></span>
           <button id="refresh-btn" class="btn btn-ghost btn-sm">&#8635;</button>
+          <button id="alert-bell-btn" class="btn btn-ghost btn-sm alert-bell-btn" data-tip="Set up APY alerts">&#128276;</button>
         </div>
       </div>
 
@@ -756,6 +757,39 @@
 
         <!-- TX Stepper -->
         <div id="tx-stepper" class="tx-stepper hidden" role="status"></div>
+
+        <!-- APY Alert modal -->
+        <div id="alert-modal-overlay" class="alert-modal-overlay hidden">
+          <div class="alert-modal">
+            <button id="alert-modal-close" class="alert-modal-close">&times;</button>
+            <h3>APY Alerts</h3>
+            <p class="alert-modal-desc">Get notified when your position's net APY turns negative.</p>
+            <div class="form-group">
+              <label>Email</label>
+              <input type="email" id="alert-email" class="input" placeholder="you@example.com" />
+            </div>
+            <div class="form-group">
+              <label>Pool &amp; Asset</label>
+              <div class="alert-pool-asset">
+                <span id="alert-pool-name" class="mono">—</span>
+                <span class="alert-sep">/</span>
+                <span id="alert-asset-name" class="mono">—</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Leverage bracket</label>
+              <select id="alert-leverage" class="input alert-leverage-select">
+                <option value="2">2x</option>
+                <option value="3">3x</option>
+                <option value="5" selected>5x</option>
+                <option value="8">8x</option>
+                <option value="10">10x</option>
+              </select>
+            </div>
+            <button id="alert-subscribe-btn" class="btn btn-primary btn-lg">Subscribe</button>
+            <p class="alert-hint">We never store your wallet address.</p>
+          </div>
+        </div>
 
         <!-- Toast stack -->
         <div id="toast-stack" class="toast-stack"></div>

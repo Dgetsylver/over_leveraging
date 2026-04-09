@@ -938,6 +938,46 @@ main { flex: 1; max-width: 1200px; width: 100%; margin: 0 auto; padding: 20px 24
 }
 .mobile-card-tab.active { background: var(--tab-active-bg); color: var(--primary); border-color: var(--tab-active-border); }
 
+/* ── APY Alert modal ─────────────────────────────────────────────────────── */
+
+.alert-bell-btn { font-size: 16px; line-height: 1; }
+.alert-modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,.7); backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.alert-modal {
+  position: relative;
+  background: var(--surface-solid); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 28px 24px; max-width: 400px; width: 100%;
+  box-shadow: var(--shadow);
+}
+.alert-modal-close {
+  position: absolute; top: 12px; right: 14px;
+  background: none; border: none; color: var(--text-2); font-size: 22px;
+  cursor: pointer; line-height: 1; padding: 0;
+}
+.alert-modal-close:hover { color: var(--text); }
+.alert-modal h3 { font-size: 18px; font-weight: 700; margin: 0 0 6px; letter-spacing: -.3px; }
+.alert-modal-desc { font-size: 13px; color: var(--text-2); margin: 0 0 18px; line-height: 1.5; }
+.alert-pool-asset {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px; background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: var(--r-xs); font-size: 13px;
+}
+.alert-sep { color: var(--text-3); }
+.alert-leverage-select {
+  width: 100%; padding: 8px 12px; font-size: 14px;
+  background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: var(--r-xs); color: var(--text); font-family: var(--mono);
+  cursor: pointer;
+}
+.alert-hint {
+  font-size: 12px; color: var(--text-3); text-align: center;
+  margin: 12px 0 0; line-height: 1.5;
+}
+
 /* ── Misc ────────────────────────────────────────────────────────────────── */
 
 .hidden { display: none !important; }

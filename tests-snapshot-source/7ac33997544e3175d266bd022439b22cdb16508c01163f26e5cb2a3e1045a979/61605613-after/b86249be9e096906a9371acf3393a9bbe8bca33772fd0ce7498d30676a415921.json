@@ -1,0 +1,81 @@
+{
+  "last_modified_ledger_seq": 61605256,
+  "data": {
+    "contract_data": {
+      "ext": "v0",
+      "contract": "CDMAVJPFXPADND3YRL4BSM3AKZWCTFMX27GLLXCML3PD62HEQS5FPVAI",
+      "key": {
+        "vec": [
+          {
+            "symbol": "ResData"
+          },
+          {
+            "address": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"
+          }
+        ]
+      },
+      "durability": "persistent",
+      "val": {
+        "map": [
+          {
+            "key": {
+              "symbol": "b_rate"
+            },
+            "val": {
+              "i128": "1000837073354"
+            }
+          },
+          {
+            "key": {
+              "symbol": "b_supply"
+            },
+            "val": {
+              "i128": "1154583279901"
+            }
+          },
+          {
+            "key": {
+              "symbol": "backstop_credit"
+            },
+            "val": {
+              "i128": "16541588"
+            }
+          },
+          {
+            "key": {
+              "symbol": "d_rate"
+            },
+            "val": {
+              "i128": "1002037806357"
+            }
+          },
+          {
+            "key": {
+              "symbol": "d_supply"
+            },
+            "val": {
+              "i128": "824280387942"
+            }
+          },
+          {
+            "key": {
+              "symbol": "ir_mod"
+            },
+            "val": {
+              "i128": "1000000"
+            }
+          },
+          {
+            "key": {
+              "symbol": "last_time"
+            },
+            "val": {
+              "u64": "1773246650"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "ext": "v0"
+}

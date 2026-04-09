@@ -102,6 +102,15 @@ fn rpc_call(client: &Client, method: &str, params: Value) -> Value {
 
 // ── Pool state from RPC ───────────────────────────────────────────────────────
 
+/// Maximum pool utilization at which new leveraged positions are allowed.
+/// Above this, d-tokens (collateral) become illiquid — liquidators can't redeem
+/// them, so they won't liquidate, and bad debt accumulates.
+const MAX_SAFE_UTILIZATION: f64 = 0.85;
+
+/// Maximum allowed borrow-supply APR spread (percentage points).
+/// Abnormally high spreads may indicate rate manipulation.
+const MAX_RATE_SPREAD_PCT: f64 = 15.0;
+
 /// Minimal reserve data read via getLedgerEntries (raw, parsed from XDR base64).
 /// We use the simulation test for detailed pre-flight; here we just need
 /// c_factor and current rates to compute request amounts.
@@ -111,6 +120,7 @@ struct PoolSnapshot {
     supply_apr:   f64,
     borrow_apr:   f64,
     pool_supply_usdc: f64,
+    pool_borrow_usdc: f64,
     supply_cap_usdc:  Option<f64>,
 }
 
@@ -137,6 +147,7 @@ fn fetch_pool_snapshot(client: &Client) -> PoolSnapshot {
         supply_apr: 0.0,             // populated in preflight output
         borrow_apr: 0.0,
         pool_supply_usdc: 0.0,
+        pool_borrow_usdc: 0.0,
         supply_cap_usdc: None,
     }
 }
@@ -239,6 +250,69 @@ fn print_preflight(pairs: &[(i128, i128)], c_factor: i128, initial_usdc: f64, dr
     println!();
 }
 
+// ── Safety guards ────────────────────────────────────────────────────────────
+//
+// Pre-flight checks that mitigate structural exploit risks:
+//  1. Utilization cap — circular collateral lock at high utilization
+//  2. Rate spread guard — abnormal spread may indicate manipulation
+//  3. Projected utilization — refuses if the loop itself would push past cap
+
+fn check_safety(snap: &PoolSnapshot, initial_usdc: f64, n_loops: usize) -> Result<(), String> {
+    let c = snap.c_factor as f64 / SCALAR as f64;
+
+    // Current utilization
+    let util = if snap.pool_supply_usdc > 0.0 {
+        snap.pool_borrow_usdc / snap.pool_supply_usdc
+    } else {
+        0.0
+    };
+
+    if util > MAX_SAFE_UTILIZATION {
+        return Err(format!(
+            "Pool utilization is {:.1}% (max {:.0}%). \
+             High utilization means collateral d-tokens are illiquid — \
+             liquidators won't act, risking bad debt spiral. Wait for utilization to drop.",
+            util * 100.0, MAX_SAFE_UTILIZATION * 100.0
+        ));
+    }
+
+    // Rate spread
+    let spread = snap.borrow_apr - snap.supply_apr;
+    if spread * 100.0 > MAX_RATE_SPREAD_PCT {
+        return Err(format!(
+            "Borrow-supply APR spread is {:.1}% — abnormally high (max {:.0}%). \
+             This may indicate rate manipulation. Wait for rates to stabilize.",
+            spread * 100.0, MAX_RATE_SPREAD_PCT
+        ));
+    }
+
+    // Projected utilization after loop
+    let lev = (1.0 - c.powi(n_loops as i32 + 1)) / (1.0 - c);
+    let add_supply = initial_usdc * lev;
+    let add_borrow = initial_usdc * (lev - 1.0);
+    let proj_supply = snap.pool_supply_usdc + add_supply;
+    let proj_borrow = snap.pool_borrow_usdc + add_borrow;
+    let proj_util = if proj_supply > 0.0 { proj_borrow / proj_supply } else { 0.0 };
+
+    if proj_util > MAX_SAFE_UTILIZATION {
+        return Err(format!(
+            "This position would push pool utilization to {:.1}% (max {:.0}%). \
+             Reduce --loops or --initial.",
+            proj_util * 100.0, MAX_SAFE_UTILIZATION * 100.0
+        ));
+    }
+
+    // Warnings (non-fatal)
+    if spread * 100.0 > 5.0 {
+        eprintln!(
+            "  ⚠  Warning: borrow-supply spread is {:.1}%/yr — HF will erode quickly.",
+            spread * 100.0
+        );
+    }
+
+    Ok(())
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 fn main() {
@@ -269,6 +343,16 @@ fn main() {
 
     // 4. Print pre-flight summary.
     print_preflight(&pairs, snap.c_factor, args.initial_usdc, args.dry_run);
+
+    // 4b. Safety guards — refuse if pool conditions are unsafe.
+    if let Err(reason) = check_safety(&snap, args.initial_usdc, args.loops) {
+        eprintln!("  ✗ Safety check FAILED: {reason}");
+        eprintln!("  Pass --dry-run to bypass safety checks and inspect the simulation.");
+        if !args.dry_run {
+            process::exit(1);
+        }
+        eprintln!("  (Continuing in dry-run mode despite safety failure)");
+    }
 
     // 5. Build requests JSON for stellar-cli.
     let requests_json = format_requests_json(&pairs, USDC_ID);
