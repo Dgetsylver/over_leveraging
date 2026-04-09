@@ -763,7 +763,7 @@ function renderSelectedAsset() {
   renderAprLine("supply-blnd-apr",     rs.blndSupplyApr,     false, true);
   renderAprLine("supply-net-apr",      rs.netSupplyApr,      false);
   renderAprLine("borrow-interest-apr", rs.interestBorrowApr, true);
-  renderAprLine("borrow-blnd-apr",     -rs.blndBorrowApr,    false, true);
+  renderAprLine("borrow-blnd-apr",     rs.blndBorrowApr,     false, true, "-");
   renderAprLine("borrow-net-cost",     rs.netBorrowCost,     true);
 
   // Don't auto-collapse — user controls visibility via the toggle
@@ -773,10 +773,11 @@ function renderSelectedAsset() {
   renderPortfolioSummary();
 }
 
-function renderAprLine(id: string, val: number, isCost: boolean, isBlnd = false) {
+function renderAprLine(id: string, val: number, isCost: boolean, isBlnd = false, sign?: string) {
   const el = $(id);
   if (!el) return;
-  el.textContent = `${val >= 0 ? "+" : ""}${fmt(val, 2)}%`;
+  const prefix = sign ?? (val >= 0 ? "+" : "-");
+  el.textContent = `${prefix}${fmt(Math.abs(val), 2)}%`;
   el.className = "apr-val " + (
     isBlnd ? "apr-blnd" :
     isCost ? (val > 5 ? "apr-bad" : val > 2 ? "apr-warn" : "apr-ok") :
