@@ -762,10 +762,10 @@ function renderSelectedAsset() {
 
   renderAprLine("supply-interest-apr", rs.interestSupplyApr, false);
   renderAprLine("supply-blnd-apr",     rs.blndSupplyApr,     false, true);
-  renderAprLine("supply-net-apr",      rs.netSupplyApr,      false);
+  renderAprLine("supply-net-apr",      aprToApy(rs.interestSupplyApr) + rs.blndSupplyApr, false, false, undefined, true);
   renderAprLine("borrow-interest-apr", rs.interestBorrowApr, true);
   renderAprLine("borrow-blnd-apr",     rs.blndBorrowApr,     false, true, "-");
-  renderAprLine("borrow-net-cost",     rs.netBorrowCost,     true);
+  renderAprLine("borrow-net-cost",     aprToApy(rs.interestBorrowApr) - rs.blndBorrowApr, true, false, undefined, true);
 
   // Don't auto-collapse — user controls visibility via the toggle
 
@@ -774,16 +774,16 @@ function renderSelectedAsset() {
   renderPortfolioSummary();
 }
 
-function renderAprLine(id: string, val: number, isCost: boolean, isBlnd = false, sign?: string) {
+function renderAprLine(id: string, val: number, isCost: boolean, isBlnd = false, sign?: string, raw = false) {
   const el = $(id);
   if (!el) return;
-  const apy = aprToApy(val);
-  const prefix = sign ?? (apy >= 0 ? "+" : "-");
-  el.textContent = `${prefix}${fmt(Math.abs(apy), 2)}%`;
+  const display = (isBlnd || raw) ? val : aprToApy(val);
+  const prefix = sign ?? (display >= 0 ? "+" : "-");
+  el.textContent = `${prefix}${fmt(Math.abs(display), 2)}%`;
   el.className = "apr-val " + (
     isBlnd ? "apr-blnd" :
-    isCost ? (apy > 5 ? "apr-bad" : apy > 2 ? "apr-warn" : "apr-ok") :
-             (apy > 5 ? "apr-great" : apy > 2 ? "apr-ok" : "apr-dim")
+    isCost ? (display > 5 ? "apr-bad" : display > 2 ? "apr-warn" : "apr-ok") :
+             (display > 5 ? "apr-great" : display > 2 ? "apr-ok" : "apr-dim")
   );
 }
 
