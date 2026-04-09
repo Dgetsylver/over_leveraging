@@ -1917,44 +1917,33 @@ function debounceQuote() {
 
 function initTooltips() {
   const popover = $("tooltip-popover");
+  function showTip(el: HTMLElement) {
+    popover.textContent = el.dataset.tip || "";
+    const rect = el.getBoundingClientRect();
+    popover.style.left = `${rect.left + rect.width / 2}px`;
+    popover.style.top = `${rect.bottom + 8}px`;
+    popover.style.transform = "translateX(-50%)";
+  }
   document.querySelectorAll<HTMLElement>(".tooltip").forEach(el => {
-    const tip = el.getAttribute("title") || el.dataset.tip || "";
-    el.removeAttribute("title");
-    el.dataset.tip = tip;
+    if (el.hasAttribute("title")) {
+      el.dataset.tip = el.getAttribute("title") || "";
+      el.removeAttribute("title");
+    }
 
-    el.addEventListener("mouseenter", () => {
-      popover.textContent = tip;
-      const rect = el.getBoundingClientRect();
-      popover.style.left = `${rect.left + rect.width / 2}px`;
-      popover.style.top = `${rect.bottom + 8}px`;
-      popover.style.transform = "translateX(-50%)";
-      popover.classList.add("visible");
-    });
+    el.addEventListener("mouseenter", () => { showTip(el); popover.classList.add("visible"); });
     el.addEventListener("mouseleave", () => popover.classList.remove("visible"));
     // Mobile: toggle on click
     el.addEventListener("click", (e) => {
       e.stopPropagation();
-      popover.textContent = tip;
-      const rect = el.getBoundingClientRect();
-      popover.style.left = `${rect.left + rect.width / 2}px`;
-      popover.style.top = `${rect.bottom + 8}px`;
-      popover.style.transform = "translateX(-50%)";
+      showTip(el);
       popover.classList.toggle("visible");
     });
   });
   // Also handle data-tip on non-.tooltip elements (buttons, etc.)
   document.querySelectorAll<HTMLElement>("[data-tip]:not(.tooltip)").forEach(el => {
-    const tip = el.dataset.tip || "";
     el.removeAttribute("title");
 
-    el.addEventListener("mouseenter", () => {
-      popover.textContent = tip;
-      const rect = el.getBoundingClientRect();
-      popover.style.left = `${rect.left + rect.width / 2}px`;
-      popover.style.top = `${rect.bottom + 8}px`;
-      popover.style.transform = "translateX(-50%)";
-      popover.classList.add("visible");
-    });
+    el.addEventListener("mouseenter", () => { showTip(el); popover.classList.add("visible"); });
     el.addEventListener("mouseleave", () => popover.classList.remove("visible"));
   });
   document.addEventListener("click", () => popover.classList.remove("visible"));
