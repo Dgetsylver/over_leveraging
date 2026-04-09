@@ -767,6 +767,14 @@ function renderSelectedAsset() {
   renderAprLine("borrow-blnd-apr",     rs.blndBorrowApr,     false, true, "-");
   renderAprLine("borrow-net-cost",     aprToApy(rs.interestBorrowApr) - rs.blndBorrowApr, true, false, undefined, true);
 
+  // Update net tooltips with actual APR
+  const supplyTip = $("supply-net-tip");
+  if (supplyTip) supplyTip.setAttribute("data-tip",
+    `Approximate APY: interest compounds but BLND emissions don't. Actual net APR: ${fmt(rs.netSupplyApr, 2)}%`);
+  const borrowTip = $("borrow-net-tip");
+  if (borrowTip) borrowTip.setAttribute("data-tip",
+    `Approximate APY: interest compounds but BLND emissions don't. Actual net APR: ${fmt(rs.netBorrowCost, 2)}%`);
+
   // Don't auto-collapse — user controls visibility via the toggle
 
   updatePreview();
