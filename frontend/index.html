@@ -311,7 +311,7 @@
                 <div class="apr-card">
                   <div class="apr-card-label">Supply</div>
                   <div class="apr-row">
-                    <span class="apr-key">Interest APR</span>
+                    <span class="apr-key">Interest APY</span>
                     <span class="apr-val" id="supply-interest-apr">—</span>
                   </div>
                   <div class="apr-row">
@@ -319,7 +319,7 @@
                     <span class="apr-val apr-blnd" id="supply-blnd-apr">—</span>
                   </div>
                   <div class="apr-row apr-net-row">
-                    <span class="apr-key">Net supply APR</span>
+                    <span class="apr-key">Net supply APY</span>
                     <span class="apr-val" id="supply-net-apr">—</span>
                   </div>
                 </div>
@@ -422,7 +422,7 @@
                     <span>Borrow headroom</span><strong id="prev-headroom" class="mono">—</strong>
                   </div>
                   <div class="preview-row preview-net-apr">
-                    <span>Est. net APR</span><strong id="prev-net-apr" class="prev-net-apr">—</strong>
+                    <span>Est. net APY</span><strong id="prev-net-apr" class="prev-net-apr">—</strong>
                   </div>
                   <div class="preview-row">
                     <span>Days to liquidation</span><strong id="prev-liq-days">—</strong>
@@ -511,7 +511,7 @@
                     <span class="metric-value" id="pos-pool-hf">—</span>
                   </div>
                   <div class="position-metric">
-                    <span class="metric-label">Net APY <span class="tooltip" data-tip="Annual return on your initial deposit (equity). Formula: supplyAPR x leverage - borrowAPR x (leverage - 1). Includes BLND emission value.">?</span></span>
+                    <span class="metric-label">Net APY <span class="tooltip" data-tip="Compounded annual return on your equity. Includes BLND emission value.">?</span></span>
                     <span class="metric-value" id="pos-net-apr">—</span>
                   </div>
                   <div class="position-metric">
@@ -519,7 +519,7 @@
                     <span class="metric-value mono" id="pos-headroom">—</span>
                   </div>
                   <div class="position-metric position-metric-full">
-                    <span class="metric-label">Days until liquidation <span class="tooltip" data-tip="Estimated days before HF drops to 1.0, based on the interest rate spread only (borrow APR - supply APR).">?</span></span>
+                    <span class="metric-label">Days until liquidation <span class="tooltip" data-tip="Estimated days before HF drops to 1.0, based on the interest rate spread (borrow - supply).">?</span></span>
                     <span class="metric-value" id="pos-liq-days">—</span>
                     <div class="liq-days-note" id="pos-liq-note"></div>
                   </div>
@@ -666,11 +666,11 @@
                   <span class="metric-value mono" id="vault-equity">--</span>
                 </div>
                 <div class="position-metric">
-                  <span class="metric-label">Supply APR</span>
+                  <span class="metric-label">Supply APY</span>
                   <span class="metric-value mono" id="vault-supply-apr">--</span>
                 </div>
                 <div class="position-metric">
-                  <span class="metric-label">Borrow APR</span>
+                  <span class="metric-label">Borrow APY</span>
                   <span class="metric-value mono" id="vault-borrow-apr">--</span>
                 </div>
                 <div class="position-metric">

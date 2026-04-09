@@ -332,6 +332,7 @@ let demoMode = false;
 const $ = (id: string) => document.getElementById(id)!;
 const fmt  = (n: number, d = 2) =>
   n.toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d });
+const aprToApy = (apr: number) => (Math.exp(apr / 100) - 1) * 100;
 const fmtAddr = (addr: string) => addr.slice(0, 6) + "…" + addr.slice(-4);
 
 // ── Skeleton loading (#3) ────────────────────────────────────────────────────
@@ -698,7 +699,7 @@ function renderApyChart(rs: ReserveStats | undefined, currentLev: number) {
   const W = 300, H = 120, padL = 34, padR = 10, padT = 14, padB = 15;
   const steps: { lev: number; apy: number }[] = [];
   for (let l = 1.1; l <= maxLev; l += 0.2) {
-    steps.push({ lev: l, apy: rs.netSupplyApr * l - rs.netBorrowCost * (l - 1) });
+    steps.push({ lev: l, apy: aprToApy(rs.netSupplyApr * l - rs.netBorrowCost * (l - 1)) });
   }
   if (steps.length < 2) { container.innerHTML = ""; return; }
   const minApy = Math.min(0, ...steps.map(s => s.apy));
@@ -707,7 +708,7 @@ function renderApyChart(rs: ReserveStats | undefined, currentLev: number) {
   const x = (lev: number) => padL + (lev - 1.1) / (maxLev - 1.1) * (W - padL - padR);
   const y = (apy: number) => padT + (1 - (apy - minApy) / rangeApy) * (H - padT - padB);
   const points = steps.map(s => `${x(s.lev).toFixed(1)},${y(s.apy).toFixed(1)}`).join(" ");
-  const curApy = rs.netSupplyApr * currentLev - rs.netBorrowCost * (currentLev - 1);
+  const curApy = aprToApy(rs.netSupplyApr * currentLev - rs.netBorrowCost * (currentLev - 1));
   const zeroY = y(0);
 
   // Position the label above or below the dot to avoid clipping
@@ -776,12 +777,13 @@ function renderSelectedAsset() {
 function renderAprLine(id: string, val: number, isCost: boolean, isBlnd = false, sign?: string) {
   const el = $(id);
   if (!el) return;
-  const prefix = sign ?? (val >= 0 ? "+" : "-");
-  el.textContent = `${prefix}${fmt(Math.abs(val), 2)}%`;
+  const apy = aprToApy(val);
+  const prefix = sign ?? (apy >= 0 ? "+" : "-");
+  el.textContent = `${prefix}${fmt(Math.abs(apy), 2)}%`;
   el.className = "apr-val " + (
     isBlnd ? "apr-blnd" :
-    isCost ? (val > 5 ? "apr-bad" : val > 2 ? "apr-warn" : "apr-ok") :
-             (val > 5 ? "apr-great" : val > 2 ? "apr-ok" : "apr-dim")
+    isCost ? (apy > 5 ? "apr-bad" : apy > 2 ? "apr-warn" : "apr-ok") :
+             (apy > 5 ? "apr-great" : apy > 2 ? "apr-ok" : "apr-dim")
   );
 }
 
@@ -808,7 +810,7 @@ function renderPortfolioSummary() {
   container.innerHTML = "";
   for (const [assetId, pos] of positions.byAsset) {
     const rs = reserves.find(r => r.asset.id === assetId);
-    const netApr = rs ? rs.netSupplyApr * pos.leverage - rs.netBorrowCost * (pos.leverage - 1) : 0;
+    const netApy = rs ? aprToApy(rs.netSupplyApr * pos.leverage - rs.netBorrowCost * (pos.leverage - 1)) : 0;
     const hfColor = pos.hf > 1.1 ? "var(--success)" : pos.hf > 1.03 ? "var(--warning)" : "var(--danger)";
     const card = document.createElement("div");
     card.className = `portfolio-card ${assetId === selectedAsset.id ? "active" : ""}`;
@@ -817,7 +819,7 @@ function renderPortfolioSummary() {
       <span class="portfolio-card-symbol">${pos.asset.symbol}</span>
       <span class="portfolio-card-details">
         <span>${fmt(pos.equity, 2)} equity \u00B7 ${fmt(pos.leverage, 1)}\u00D7</span>
-        <span>APY ${netApr >= 0 ? "+" : ""}${fmt(netApr, 1)}% \u00B7 HF ${fmt(pos.hf, 2)}</span>
+        <span>APY ${netApy >= 0 ? "+" : ""}${fmt(netApy, 1)}% \u00B7 HF ${fmt(pos.hf, 2)}</span>
       </span>`;
     card.addEventListener("click", () => {
       const asset = assets.find(a => a.id === assetId);
@@ -957,13 +959,13 @@ function renderPosition() {
   const netAprEl = $("pos-net-apr");
   const heroApyEl = $("hero-net-apy");
   if (rs && pos.leverage > 0) {
-    const netApr = rs.netSupplyApr * pos.leverage - rs.netBorrowCost * (pos.leverage - 1);
-    const aprIcon = netApr > 0 ? "\u2713" : "\u2717";
-    netAprEl.textContent = `${aprIcon} ${netApr >= 0 ? "+" : ""}${fmt(netApr, 2)}%`;
-    netAprEl.className   = `metric-value ${netApr > 0 ? "hf-ok" : "hf-bad"}`;
+    const netApy = aprToApy(rs.netSupplyApr * pos.leverage - rs.netBorrowCost * (pos.leverage - 1));
+    const apyIcon = netApy > 0 ? "\u2713" : "\u2717";
+    netAprEl.textContent = `${apyIcon} ${netApy >= 0 ? "+" : ""}${fmt(netApy, 2)}%`;
+    netAprEl.className   = `metric-value ${netApy > 0 ? "hf-ok" : "hf-bad"}`;
     // Hero APY
-    heroApyEl.textContent = `${netApr >= 0 ? "+" : ""}${fmt(netApr, 1)}%`;
-    heroApyEl.className   = `metric-hero-value ${netApr > 0 ? "hf-ok" : "hf-bad"}`;
+    heroApyEl.textContent = `${netApy >= 0 ? "+" : ""}${fmt(netApy, 1)}%`;
+    heroApyEl.className   = `metric-hero-value ${netApy > 0 ? "hf-ok" : "hf-bad"}`;
   } else {
     netAprEl.textContent = "\u2014";
     netAprEl.className   = "metric-value";
@@ -977,7 +979,7 @@ function renderPosition() {
   if (rs && pos.leverage > 0 && isFinite(pos.hf) && pos.hf > 1) {
     const spreadPct = rs.interestBorrowApr - rs.interestSupplyApr;
     if (spreadPct <= 0) {
-      liqDaysEl.textContent = "Never (supply APR \u2265 borrow APR)";
+      liqDaysEl.textContent = "Never (supply rate \u2265 borrow rate)";
       liqDaysEl.className   = "metric-value hf-ok";
       liqNoteEl.textContent = "";
     } else {
@@ -988,7 +990,7 @@ function renderPosition() {
         liqDaysEl.textContent = daysLeft > 3650 ? ">10 years" : `~${Math.round(daysLeft)} days`;
       }
       liqDaysEl.className   = `metric-value ${daysLeft < 30 ? "hf-bad" : daysLeft < 90 ? "hf-warn" : "hf-ok"}`;
-      liqNoteEl.textContent = `Interest spread: ${fmt(spreadPct, 2)}%/yr (borrow \u2212 supply). Claim & convert BLND to extend runway.`;
+      liqNoteEl.textContent = `Interest spread: ${fmt(aprToApy(spreadPct), 2)}%/yr (borrow \u2212 supply). Claim & convert BLND to extend runway.`;
     }
   } else {
     liqDaysEl.textContent = "\u2014";
@@ -1163,9 +1165,9 @@ function updatePreview() {
   }
 
   if (rs) {
-    const netApr = rs.netSupplyApr * lev - rs.netBorrowCost * (lev - 1);
-    $("prev-net-apr").textContent = `${fmt(netApr, 2)}% APY on equity`;
-    $("prev-net-apr").className   = `prev-net-apr ${netApr > 0 ? "apr-great" : "apr-bad"}`;
+    const netApy = aprToApy(rs.netSupplyApr * lev - rs.netBorrowCost * (lev - 1));
+    $("prev-net-apr").textContent = `${fmt(netApy, 2)}% APY on equity`;
+    $("prev-net-apr").className   = `prev-net-apr ${netApy > 0 ? "apr-great" : "apr-bad"}`;
 
     // Days until liquidation at this leverage (interest-only, no BLND)
     const spreadPct = rs.interestBorrowApr - rs.interestSupplyApr;
@@ -2331,7 +2333,7 @@ function renderOverview(blendPos: OverviewBlendPosition[], vaultPos: OverviewVau
     for (const bp of blendPos) {
       const rs = bp.reserves.find(r => r.asset.id === bp.asset.id);
       const price = rs?.priceUsd ?? 0;
-      const netApr = rs ? rs.netSupplyApr * bp.pos.leverage - rs.netBorrowCost * (bp.pos.leverage - 1) : 0;
+      const netApy = rs ? aprToApy(rs.netSupplyApr * bp.pos.leverage - rs.netBorrowCost * (bp.pos.leverage - 1)) : 0;
       const hfColor = bp.pos.hf > 1.1 ? "hf-ok" : bp.pos.hf > 1.03 ? "hf-warn" : "hf-bad";
       const pool = getKnownPools().find(p => p.id === bp.pool.id)!;
 
@@ -2341,7 +2343,7 @@ function renderOverview(blendPos: OverviewBlendPosition[], vaultPos: OverviewVau
         <td class="text-right">${fmt(bp.pos.equity, 2)} ${bp.asset.symbol}</td>
         <td class="text-right">${fmt(bp.pos.leverage, 1)}&times;</td>
         <td class="text-right ${hfColor}">${isFinite(bp.pos.hf) ? fmt(bp.pos.hf, 3) : "\u221E"}</td>
-        <td class="text-right ${netApr > 0 ? "hf-ok" : "hf-bad"}">${netApr >= 0 ? "+" : ""}${fmt(netApr, 1)}%</td>
+        <td class="text-right ${netApy > 0 ? "hf-ok" : "hf-bad"}">${netApy >= 0 ? "+" : ""}${fmt(netApy, 1)}%</td>
         <td class="text-right">${fmt(bp.pos.debt, 2)} ${bp.asset.symbol}</td>
       </tr>`;
     }
@@ -2502,11 +2504,11 @@ async function refreshVaultView() {
     $("vault-equity").textContent = fmt(stats.totalEquity, 2) + " " + vault.assetSymbol;
 
     if (stats.supplyApr !== null) {
-      $("vault-supply-apr").textContent = "+" + stats.supplyApr.toFixed(2) + "%";
+      $("vault-supply-apr").textContent = "+" + aprToApy(stats.supplyApr).toFixed(2) + "%";
       $("vault-supply-apr").className = "metric-value mono hf-ok";
     }
     if (stats.borrowApr !== null) {
-      $("vault-borrow-apr").textContent = "-" + stats.borrowApr.toFixed(2) + "%";
+      $("vault-borrow-apr").textContent = "-" + aprToApy(stats.borrowApr).toFixed(2) + "%";
       $("vault-borrow-apr").className = "metric-value mono hf-bad";
     }
 
