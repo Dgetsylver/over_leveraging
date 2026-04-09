@@ -821,10 +821,12 @@ function renderPortfolioSummary() {
   container.innerHTML = "";
   for (const [assetId, pos] of positions.byAsset) {
     const rs = reserves.find(r => r.asset.id === assetId);
-    const netApy = rs ? aprToApy(rs.netSupplyApr * pos.leverage - rs.netBorrowCost * (pos.leverage - 1)) : 0;
+    const cardNetApr = rs ? rs.netSupplyApr * pos.leverage - rs.netBorrowCost * (pos.leverage - 1) : 0;
+    const netApy = aprToApy(cardNetApr);
     const hfColor = pos.hf > 1.1 ? "var(--success)" : pos.hf > 1.03 ? "var(--warning)" : "var(--danger)";
     const card = document.createElement("div");
     card.className = `portfolio-card ${assetId === selectedAsset.id ? "active" : ""}`;
+    card.title = `Approximate APY — Blend does not auto-compound. Actual net APR: ${fmt(cardNetApr, 2)}%`;
     card.innerHTML = `
       <span class="portfolio-card-hf-dot" style="background:${hfColor};box-shadow:0 0 6px ${hfColor}"></span>
       <span class="portfolio-card-symbol">${pos.asset.symbol}</span>
@@ -973,13 +975,20 @@ function renderPosition() {
   const netAprEl = $("pos-net-apr");
   const heroApyEl = $("hero-net-apy");
   if (rs && pos.leverage > 0) {
-    const netApy = aprToApy(rs.netSupplyApr * pos.leverage - rs.netBorrowCost * (pos.leverage - 1));
+    const posNetApr = rs.netSupplyApr * pos.leverage - rs.netBorrowCost * (pos.leverage - 1);
+    const netApy = aprToApy(posNetApr);
     const apyIcon = netApy > 0 ? "\u2713" : "\u2717";
     netAprEl.textContent = `${apyIcon} ${netApy >= 0 ? "+" : ""}${fmt(netApy, 2)}%`;
     netAprEl.className   = `metric-value ${netApy > 0 ? "hf-ok" : "hf-bad"}`;
     // Hero APY
     heroApyEl.textContent = `${netApy >= 0 ? "+" : ""}${fmt(netApy, 1)}%`;
     heroApyEl.className   = `metric-hero-value ${netApy > 0 ? "hf-ok" : "hf-bad"}`;
+    // Tooltips with actual APR
+    const aprTip = `Approximate APY — Blend interest does not auto-compound. Actual net APR: ${fmt(posNetApr, 2)}%`;
+    const posTip = $("pos-net-apr-tip");
+    if (posTip) posTip.setAttribute("data-tip", aprTip);
+    const heroTip = $("hero-net-apy-tip");
+    if (heroTip) heroTip.setAttribute("data-tip", aprTip);
   } else {
     netAprEl.textContent = "\u2014";
     netAprEl.className   = "metric-value";
@@ -2346,9 +2355,11 @@ function renderOverview(blendPos: OverviewBlendPosition[], vaultPos: OverviewVau
     for (const bp of blendPos) {
       const rs = bp.reserves.find(r => r.asset.id === bp.asset.id);
       const price = rs?.priceUsd ?? 0;
-      const netApy = rs ? aprToApy(rs.netSupplyApr * bp.pos.leverage - rs.netBorrowCost * (bp.pos.leverage - 1)) : 0;
+      const batchNetApr = rs ? rs.netSupplyApr * bp.pos.leverage - rs.netBorrowCost * (bp.pos.leverage - 1) : 0;
+      const netApy = aprToApy(batchNetApr);
       const hfColor = bp.pos.hf > 1.1 ? "hf-ok" : bp.pos.hf > 1.03 ? "hf-warn" : "hf-bad";
       const pool = getKnownPools().find(p => p.id === bp.pool.id)!;
+      const batchTip = `Approximate APY — Blend does not auto-compound. Actual net APR: ${fmt(batchNetApr, 2)}%`;
 
       html += `<tr data-nav-pool="${bp.pool.id}" data-nav-asset="${bp.asset.id}">
         <td class="text-label">${bp.asset.symbol}</td>
@@ -2356,7 +2367,7 @@ function renderOverview(blendPos: OverviewBlendPosition[], vaultPos: OverviewVau
         <td class="text-right">${fmt(bp.pos.equity, 2)} ${bp.asset.symbol}</td>
         <td class="text-right">${fmt(bp.pos.leverage, 1)}&times;</td>
         <td class="text-right ${hfColor}">${isFinite(bp.pos.hf) ? fmt(bp.pos.hf, 3) : "\u221E"}</td>
-        <td class="text-right ${netApy > 0 ? "hf-ok" : "hf-bad"}">${netApy >= 0 ? "+" : ""}${fmt(netApy, 1)}%</td>
+        <td class="text-right ${netApy > 0 ? "hf-ok" : "hf-bad"}" title="${batchTip}">${netApy >= 0 ? "+" : ""}${fmt(netApy, 1)}%</td>
         <td class="text-right">${fmt(bp.pos.debt, 2)} ${bp.asset.symbol}</td>
       </tr>`;
     }
@@ -2491,11 +2502,15 @@ async function refreshVaultView() {
     $("vault-tvl").textContent = formatUsd(stats.totalEquity);
     $("vault-share-price").textContent = formatUsd(stats.sharePrice, 6);
 
-    // Net APY
+    // Net APY (stats.netApy is actually APR — convert for display)
     const apyEl = $("vault-apy");
     if (stats.netApy !== null) {
-      apyEl.textContent = (stats.netApy >= 0 ? "+" : "") + stats.netApy.toFixed(1) + "%";
-      apyEl.className = "stat-value mono " + (stats.netApy > 0 ? "hf-ok" : "hf-bad");
+      const vaultApy = aprToApy(stats.netApy);
+      apyEl.textContent = (vaultApy >= 0 ? "+" : "") + vaultApy.toFixed(1) + "%";
+      apyEl.className = "stat-value mono " + (vaultApy > 0 ? "hf-ok" : "hf-bad");
+      const vaultTip = $("vault-apy-tip");
+      if (vaultTip) vaultTip.setAttribute("data-tip",
+        `Approximate APY — Blend interest does not auto-compound. Actual net APR: ${fmt(stats.netApy, 2)}%`);
     } else {
       apyEl.textContent = "--";
       apyEl.className = "stat-value mono";
