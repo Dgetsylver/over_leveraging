@@ -396,6 +396,16 @@ export async function fetchBlndPrice(pool: PoolDef, userAddress: string): Promis
 
 // ── Per-asset pool data ───────────────────────────────────────────────────────
 
+export interface RateConfig {
+  rBase:      number;  // 1e7 fixed-point
+  rOne:       number;
+  rTwo:       number;
+  rThree:     number;
+  utilOpt:    number;
+  irMod:      number;
+  backstopFP: number;
+}
+
 export interface ReserveStats {
   asset:         AssetInfo;
   cFactor:       number;
@@ -418,6 +428,7 @@ export interface ReserveStats {
   borrowEps:         bigint;
   supplyEmission:    any;    // raw get_reserve_emissions result for supply token
   borrowEmission:    any;    // raw get_reserve_emissions result for borrow token
+  rateConfig:        RateConfig;
 }
 
 export async function fetchAllReserves(pool: PoolDef, userAddress: string): Promise<ReserveStats[]> {
@@ -544,9 +555,80 @@ export async function fetchAllReserves(pool: PoolDef, userAddress: string): Prom
         borrowEps,
         supplyEmission: supplyEmissions,
         borrowEmission: borrowEmissions,
+        rateConfig: {
+          rBase: rBase_fp, rOne: rOne_fp, rTwo: rTwo_fp, rThree: rThree_fp,
+          utilOpt: utilOpt_fp, irMod: irMod_fp, backstopFP: BACKSTOP_FP,
+        },
       });
   }
   return results;
+}
+
+// ── Projected rates (for preview with position impact) ───────────────────────
+
+export interface ProjectedRates {
+  interestSupplyApr: number;
+  interestBorrowApr: number;
+  blndSupplyApr:     number;
+  blndBorrowApr:     number;
+  netSupplyApr:      number;
+  netBorrowCost:     number;
+}
+
+/**
+ * Re-run the Blend rate model with projected pool totals to estimate how
+ * a user's deposit will impact rates.
+ *
+ * @param rs       Current reserve stats (contains pool state + rate config)
+ * @param addSupply Additional tokens supplied (user's deposit × leverage)
+ * @param addBorrow Additional tokens borrowed (user's deposit × (leverage − 1))
+ */
+export function projectRates(rs: ReserveStats, addSupply: number, addBorrow: number): ProjectedRates {
+  const { rBase, rOne, rTwo, rThree, utilOpt, irMod, backstopFP } = rs.rateConfig;
+  const FIXED_95PCT = 9_500_000;
+
+  const projSupply = rs.totalSupply + addSupply;
+  const projBorrow = rs.totalBorrow + addBorrow;
+  const projUtil   = projSupply > 0 ? projBorrow / projSupply : 0;
+  const utilFp     = Math.round(projUtil * SCALAR_F);
+
+  // 3-kink interest rate model
+  let baseRate: number;
+  if (utilFp <= utilOpt) {
+    baseRate = rBase + Math.ceil(rOne * utilFp / utilOpt);
+  } else if (utilFp <= FIXED_95PCT) {
+    const slope = Math.ceil((utilFp - utilOpt) * SCALAR_F / (FIXED_95PCT - utilOpt));
+    baseRate = rBase + rOne + Math.ceil(rTwo * slope / SCALAR_F);
+  } else {
+    const slope = Math.ceil((utilFp - FIXED_95PCT) * SCALAR_F / (SCALAR_F - FIXED_95PCT));
+    baseRate = rBase + rOne + rTwo + Math.ceil(rThree * slope / SCALAR_F);
+  }
+
+  const curIr = Math.ceil(baseRate * irMod / SCALAR_F);
+  const interestBorrowApr = (curIr / SCALAR_F) * 100;
+
+  const supplyCapture = Math.floor((SCALAR_F - backstopFP) * utilFp / SCALAR_F);
+  const interestSupplyApr = (Math.floor(curIr * supplyCapture / SCALAR_F) / SCALAR_F) * 100;
+
+  // BLND emissions — same tokens/sec, diluted across new totals
+  const supplyBlndYr = Number(rs.supplyEps) * SECONDS_PER_YEAR / SCALAR_F / SCALAR_F;
+  const borrowBlndYr = Number(rs.borrowEps) * SECONDS_PER_YEAR / SCALAR_F / SCALAR_F;
+
+  const projSupplyUsd = projSupply * rs.priceUsd;
+  const projBorrowUsd = projBorrow * rs.priceUsd;
+
+  const bp = _blndPriceCache ?? 0;
+  const blndSupplyApr = projSupplyUsd > 0 ? (supplyBlndYr * bp / projSupplyUsd) * 100 : 0;
+  const blndBorrowApr = projBorrowUsd > 0 ? (borrowBlndYr * bp / projBorrowUsd) * 100 : 0;
+
+  return {
+    interestSupplyApr,
+    interestBorrowApr,
+    blndSupplyApr,
+    blndBorrowApr,
+    netSupplyApr:  interestSupplyApr + blndSupplyApr,
+    netBorrowCost: interestBorrowApr - blndBorrowApr,
+  };
 }
 
 // ── User position ─────────────────────────────────────────────────────────────

@@ -50,6 +50,7 @@ import {
   type ReserveStats,
   type AssetPosition,
   type UserPositions,
+  projectRates,
 } from "./blend.ts";
 
 import {
@@ -692,14 +693,15 @@ function renderLiqCountdownRing(days: number, maxDays = 365): string {
 
 // ── APY Chart (#14) ──────────────────────────────────────────────────────────
 
-function renderApyChart(rs: ReserveStats | undefined, currentLev: number) {
+function renderApyChart(rs: ReserveStats | undefined, currentLev: number, equity: number) {
   const container = $("apy-chart");
   if (!rs) { container.innerHTML = ""; return; }
   const maxLev = parseFloat(($("leverage-slider") as HTMLInputElement).max);
   const W = 300, H = 120, padL = 34, padR = 10, padT = 14, padB = 15;
   const steps: { lev: number; apy: number }[] = [];
   for (let l = 1.1; l <= maxLev; l += 0.2) {
-    steps.push({ lev: l, apy: aprToApy(rs.netSupplyApr * l - rs.netBorrowCost * (l - 1)) });
+    const p = projectRates(rs, equity * l, equity * (l - 1));
+    steps.push({ lev: l, apy: aprToApy(p.netSupplyApr * l - p.netBorrowCost * (l - 1)) });
   }
   if (steps.length < 2) { container.innerHTML = ""; return; }
   const minApy = Math.min(0, ...steps.map(s => s.apy));
@@ -708,7 +710,8 @@ function renderApyChart(rs: ReserveStats | undefined, currentLev: number) {
   const x = (lev: number) => padL + (lev - 1.1) / (maxLev - 1.1) * (W - padL - padR);
   const y = (apy: number) => padT + (1 - (apy - minApy) / rangeApy) * (H - padT - padB);
   const points = steps.map(s => `${x(s.lev).toFixed(1)},${y(s.apy).toFixed(1)}`).join(" ");
-  const curApy = aprToApy(rs.netSupplyApr * currentLev - rs.netBorrowCost * (currentLev - 1));
+  const curProj = projectRates(rs, equity * currentLev, equity * (currentLev - 1));
+  const curApy = aprToApy(curProj.netSupplyApr * currentLev - curProj.netBorrowCost * (currentLev - 1));
   const zeroY = y(0);
 
   // Position the label above or below the dot to avoid clipping
@@ -1173,12 +1176,13 @@ function updatePreview() {
   }
 
   if (rs) {
-    const netApy = aprToApy(rs.netSupplyApr * lev - rs.netBorrowCost * (lev - 1));
+    const proj = projectRates(rs, supply, borrow);
+    const netApy = aprToApy(proj.netSupplyApr * lev - proj.netBorrowCost * (lev - 1));
     $("prev-net-apr").textContent = `${fmt(netApy, 2)}% APY on equity`;
     $("prev-net-apr").className   = `prev-net-apr ${netApy > 0 ? "apr-great" : "apr-bad"}`;
 
     // Days until liquidation at this leverage (interest-only, no BLND)
-    const spreadPct = rs.interestBorrowApr - rs.interestSupplyApr;
+    const spreadPct = proj.interestBorrowApr - proj.interestSupplyApr;
     const prevLiqEl = $("prev-liq-days");
     if (spreadPct <= 0) {
       prevLiqEl.textContent = "Never";
@@ -1193,7 +1197,7 @@ function updatePreview() {
     }
 
     // APY chart (#14)
-    renderApyChart(rs, lev);
+    renderApyChart(rs, lev, equity);
   }
 
   // Risk zone labels (#9)
