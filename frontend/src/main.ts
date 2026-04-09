@@ -602,11 +602,11 @@ function updateLeverageSlider(c: number, l: number = 1) {
   const slider = $("leverage-slider") as HTMLInputElement;
   const numIn  = $("leverage-input")  as HTMLInputElement;
   const maxLev = Math.floor(maxLeverageFor(c, l, minHF()) * 10) / 10; // floor to 1 decimal
-  slider.min = numIn.min = "1.1";
+  slider.min = numIn.min = "1.0";
   slider.max = numIn.max = String(maxLev);
   slider.step = numIn.step = "0.1";
   const cur = parseFloat(slider.value);
-  const clamped = Math.min(maxLev, Math.max(1.1, cur));
+  const clamped = Math.min(maxLev, Math.max(1.0, cur));
   if (clamped !== cur) { slider.value = String(clamped); numIn.value = String(clamped); }
   // Gradient track (#9)
   slider.style.background = `linear-gradient(90deg, var(--success) 0%, var(--primary) 33%, var(--warning) 66%, var(--danger) 100%)`;
@@ -693,24 +693,24 @@ function renderLiqCountdownRing(days: number, maxDays = 365): string {
 
 // ── APY Chart (#14) ──────────────────────────────────────────────────────────
 
-function renderApyChart(rs: ReserveStats | undefined, currentLev: number, equity: number) {
+function renderApyChart(rs: ReserveStats | undefined, currentLev: number, equity: number, oldSupply = 0, oldBorrow = 0) {
   const container = $("apy-chart");
   if (!rs) { container.innerHTML = ""; return; }
   const maxLev = parseFloat(($("leverage-slider") as HTMLInputElement).max);
   const W = 300, H = 120, padL = 34, padR = 10, padT = 14, padB = 15;
   const steps: { lev: number; apy: number }[] = [];
-  for (let l = 1.1; l <= maxLev; l += 0.2) {
-    const p = projectRates(rs, equity * l, equity * (l - 1));
+  for (let l = 1.0; l <= maxLev; l += 0.2) {
+    const p = projectRates(rs, equity * l - oldSupply, equity * (l - 1) - oldBorrow);
     steps.push({ lev: l, apy: aprToApy(p.netSupplyApr * l - p.netBorrowCost * (l - 1)) });
   }
   if (steps.length < 2) { container.innerHTML = ""; return; }
   const minApy = Math.min(0, ...steps.map(s => s.apy));
   const maxApy = Math.max(1, ...steps.map(s => s.apy));
   const rangeApy = maxApy - minApy || 1;
-  const x = (lev: number) => padL + (lev - 1.1) / (maxLev - 1.1) * (W - padL - padR);
+  const x = (lev: number) => padL + (lev - 1.0) / (maxLev - 1.0) * (W - padL - padR);
   const y = (apy: number) => padT + (1 - (apy - minApy) / rangeApy) * (H - padT - padB);
   const points = steps.map(s => `${x(s.lev).toFixed(1)},${y(s.apy).toFixed(1)}`).join(" ");
-  const curProj = projectRates(rs, equity * currentLev, equity * (currentLev - 1));
+  const curProj = projectRates(rs, equity * currentLev - oldSupply, equity * (currentLev - 1) - oldBorrow);
   const curApy = aprToApy(curProj.netSupplyApr * currentLev - curProj.netBorrowCost * (currentLev - 1));
   const zeroY = y(0);
 
@@ -1144,7 +1144,7 @@ function switchAdjustSubTab(sub: "leverage" | "add-funds") {
 function updatePreview() {
   const slider = $("leverage-slider") as HTMLInputElement;
   const numIn  = $("leverage-input")  as HTMLInputElement;
-  const lev    = parseFloat(slider.value) || 1.1;
+  const lev    = parseFloat(slider.value) || 1.0;
   // Keep the number input in sync with the slider
   if (parseFloat(numIn.value) !== lev) numIn.value = lev.toFixed(1);
   const rs      = reserves.find(r => r.asset.id === selectedAsset.id);
@@ -1159,6 +1159,11 @@ function updatePreview() {
     : (parseFloat(($("initial-input") as HTMLInputElement).value) || 0);
   const supply  = equity * lev;
   const borrow  = equity * (lev - 1);
+
+  // When adjusting an existing position, its supply/borrow are already in the
+  // pool totals. Pass the net delta so projectRates doesn't double-count.
+  const oldSupply = (actionMode === "adjust" && pos) ? pos.collateral : 0;
+  const oldBorrow = (actionMode === "adjust" && pos) ? pos.debt : 0;
 
   $("prev-lev").textContent         = `${lev.toFixed(2)}\u00D7`;
   $("prev-supply").textContent      = `${fmt(supply, 2)} ${selectedAsset.symbol}`;
@@ -1179,7 +1184,7 @@ function updatePreview() {
   }
 
   if (rs) {
-    const proj = projectRates(rs, supply, borrow);
+    const proj = projectRates(rs, supply - oldSupply, borrow - oldBorrow);
     const netApr = proj.netSupplyApr * lev - proj.netBorrowCost * (lev - 1);
     const netApy = aprToApy(netApr);
     $("prev-net-apr").textContent = `${fmt(netApy, 2)}% APY on equity`;
@@ -1204,7 +1209,7 @@ function updatePreview() {
     }
 
     // APY chart (#14)
-    renderApyChart(rs, lev, equity);
+    renderApyChart(rs, lev, equity, oldSupply, oldBorrow);
   }
 
   // Risk zone labels (#9)
@@ -1222,7 +1227,7 @@ function updatePreview() {
     const active =
       (zone === "maxi-degen" && expertMode && atMax) ||
       (!( expertMode && atMax) && (
-        (zone === "conservative" && lev >= 1.1 && lev < 3) ||
+        (zone === "conservative" && lev >= 1.0 && lev < 3) ||
         (zone === "moderate" && lev >= 3 && lev < 6) ||
         (zone === "aggressive" && lev >= 6 && lev < 9) ||
         (zone === "degen" && lev >= 9)
@@ -2175,7 +2180,7 @@ async function refreshAddFundsBalance() {
   const numIn  = $("leverage-input")  as HTMLInputElement;
   const slider = $("leverage-slider") as HTMLInputElement;
   const v = parseFloat(numIn.value);
-  if (!isNaN(v) && v >= 1.1) {
+  if (!isNaN(v) && v >= 1.0) {
     slider.value = v.toFixed(1);
     updatePreview();
   }
@@ -2185,8 +2190,8 @@ async function refreshAddFundsBalance() {
   const numIn  = $("leverage-input")  as HTMLInputElement;
   const slider = $("leverage-slider") as HTMLInputElement;
   let v = parseFloat(numIn.value);
-  if (isNaN(v)) v = 1.1;
-  v = Math.min(parseFloat(slider.max), Math.max(1.1, Math.round(v * 10) / 10));
+  if (isNaN(v)) v = 1.0;
+  v = Math.min(parseFloat(slider.max), Math.max(1.0, Math.round(v * 10) / 10));
   numIn.value  = v.toFixed(1);
   slider.value = v.toFixed(1);
   updatePreview();
