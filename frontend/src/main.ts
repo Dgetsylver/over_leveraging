@@ -867,6 +867,9 @@ function renderPosition() {
     ($("close-btn") as HTMLButtonElement).disabled = true;
     ($("repay-btn") as HTMLButtonElement).disabled = true;
     ($("resupply-btn") as HTMLButtonElement).disabled = true;
+    // Clear stale compound estimate from previous asset
+    $("compound-estimate").textContent = "";
+    ($("compound-btn") as HTMLButtonElement).disabled = true;
     // Show Open mode
     setActionCardMode("open");
     return;
